@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🦆 MicroDuck: Duck Walk RL Showcase</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #f59e0b;
+      --accent-green: #10b981;
+      --accent-blue: #38bdf8;
+      --border: #334155;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 24px 16px;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    header { text-align: center; margin-bottom: 36px; }
+    h1 { font-size: 2.2rem; margin-bottom: 8px; color: #fbbf24; }
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      background: #065f46;
+      color: #34d399;
+      margin: 4px;
+    }
+    .badge-modal {
+      background: #1e1b4b;
+      color: #a5b4fc;
+    }
+    .subtitle { color: var(--muted); font-size: 1.1rem; max-width: 800px; margin: 0 auto; }
+    
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+    .stat-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+      text-align: center;
+    }
+    .stat-val { font-size: 1.8rem; font-weight: 700; color: var(--accent); }
+    .stat-label { font-size: 0.85rem; color: var(--muted); margin-top: 4px; }
+
+    .variant-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      margin-bottom: 36px;
+      box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3);
+    }
+    .variant-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px;
+    }
+    .variant-title { font-size: 1.5rem; color: var(--accent-blue); display: flex; align-items: center; gap: 10px; }
+    .status-pass { color: var(--accent-green); font-weight: 600; }
+
+    .media-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 20px;
+      margin-bottom: 24px;
+    }
+    .media-box {
+      background: #090d16;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+    }
+    .media-box video, .media-box img {
+      width: 100%;
+      display: block;
+      height: auto;
+      object-fit: contain;
+      background: #000;
+    }
+    .media-caption {
+      padding: 10px 14px;
+      font-size: 0.9rem;
+      color: var(--muted);
+      background: rgba(30, 41, 59, 0.8);
+      font-weight: 500;
+    }
+
+    .keyframes-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .kf-item {
+      background: #090d16;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      text-align: center;
+    }
+    .kf-item img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .kf-label {
+      font-size: 0.75rem;
+      color: var(--muted);
+      padding: 4px;
+    }
+
+    .table-container {
+      overflow-x: auto;
+      margin-top: 16px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+      text-align: left;
+    }
+    th, td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    th { color: var(--muted); font-weight: 600; background: rgba(0,0,0,0.2); }
+    .check { color: var(--accent-green); font-weight: bold; }
+
+    footer {
+      text-align: center;
+      margin-top: 48px;
+      color: var(--muted);
+      font-size: 0.85rem;
+      border-top: 1px solid var(--border);
+      padding-top: 24px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🦆 MicroDuck RL: Autonomous Duck Walk Showcase</h1>
+      <p class="subtitle">
+        Pollen Robotics MicroDuck bipedal robot trained using Modal cloud parallel sweep &amp; strict biomechanical invariants.
+      </p>
+      <div style="margin-top: 12px;">
+        <span class="badge">✅ Biomechanical Invariants Verified</span>
+        <span class="badge badge-modal">☁️ Modal 4-GPU Parallel Sweep</span>
+        <span class="badge">💰 Billed Cost: $0.00</span>
+      </div>
+    </header>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-val">147.5M</div>
+        <div class="stat-label">Total Steps per Variant</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val">100%</div>
+        <div class="stat-label">Stability (0 Falls in 7 Trials)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val">0.001 <span style="font-size: 1rem;">m/s</span></div>
+        <div class="stat-label">Velocity Tracking Error (V1)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val">$0.00</div>
+        <div class="stat-label">Net Cloud Compute Billed</div>
+      </div>
+    </div>
+
+    <!-- Side-by-Side Comparison Section -->
+    <div class="variant-card" style="border: 2px solid #38bdf8;">
+      <div class="variant-header">
+        <div>
+          <h2 class="variant-title" style="color: #38bdf8;">⚖️ Synchronized Side-by-Side: Standard Walk vs. Gentle Waddle</h2>
+          <p style="color: var(--muted); font-size: 0.95rem; margin-top: 4px;">
+            Identical command (vx = +0.25 m/s), identical simulation timestep (50 Hz), synchronized frame-for-frame.
+          </p>
+        </div>
+        <span class="badge" style="background: #1e3a8a; color: #93c5fd; font-size: 0.9rem;">2.6x Roll Sway Amplitude</span>
+      </div>
+
+      <div class="media-row">
+        <div class="media-box">
+          <video controls autoplay loop muted playsinline src="comparison_side_by_side_front.mp4"></video>
+          <div class="media-caption">
+            <strong>Frontal Camera (Best View):</strong> Left = Standard Walk (&plusmn;4.2&deg;) | Right = Gentle Waddle (&plusmn;11.1&deg;)
+          </div>
+        </div>
+        <div class="media-box">
+          <video controls autoplay loop muted playsinline src="comparison_side_by_side_persp.mp4"></video>
+          <div class="media-caption">
+            <strong>Perspective Camera:</strong> Left = Standard Walk | Right = Gentle Waddle
+          </div>
+        </div>
+      </div>
+
+      <h3 style="font-size: 1.15rem; margin-top: 20px; margin-bottom: 10px; color: #fbbf24;">📈 Kinematic Telemetry Analysis (4.0s Stride)</h3>
+      <div style="background: #090d16; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); margin-bottom: 20px;">
+        <img src="telemetry_comparison.png" alt="Telemetry Comparison Plot" style="width: 100%; height: auto; display: block;">
+      </div>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Kinematic Parameter</th>
+              <th>Standard Walk (Baseline)</th>
+              <th>Gentle Waddle (V1)</th>
+              <th>Physical Difference</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Torso Roll Oscillation (Peak-to-Peak / 2)</strong></td>
+              <td>&plusmn;4.24&deg; (Std: 2.78&deg;)</td>
+              <td style="color: #f59e0b; font-weight: bold;">&plusmn;11.07&deg; (Std: 6.42&deg;)</td>
+              <td style="color: #34d399; font-weight: bold;">+161% (+2.6x larger sway)</td>
+            </tr>
+            <tr>
+              <td><strong>Torso Roll Extremes</strong></td>
+              <td>[-4.22&deg;, +4.25&deg;]</td>
+              <td style="color: #f59e0b; font-weight: bold;">[-9.90&deg;, +12.23&deg;]</td>
+              <td>Pronounced waddling cycle</td>
+            </tr>
+            <tr>
+              <td><strong>Mean Base Height</strong></td>
+              <td>11.94 cm</td>
+              <td>11.82 cm</td>
+              <td>1.2 mm lower (crouched posture)</td>
+            </tr>
+            <tr>
+              <td><strong>Forward Velocity Tracking</strong></td>
+              <td>0.247 m/s (Err: 0.003)</td>
+              <td>0.249 m/s (Err: 0.001)</td>
+              <td>Both achieve near-perfect target tracking</td>
+            </tr>
+            <tr>
+              <td><strong>Foot Ground Clearance Apex</strong></td>
+              <td>1.47 cm</td>
+              <td style="color: #f59e0b; font-weight: bold;">1.91 cm</td>
+              <td>+30% higher foot lifting during waddle</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div style="margin-top: 16px; padding: 14px; background: rgba(51, 65, 85, 0.4); border-radius: 8px; font-size: 0.9rem; color: #cbd5e1;">
+        <strong style="color: #fbbf24;">🔍 Why it looks similar in perspective view:</strong>
+        In a 3/4 tracking perspective camera, side-to-side roll motion is visually foreshortened, while the overall forward gait and height look similar.
+        However, from the <strong>Frontal Camera</strong>, the waddling motion is unmistakable: the duck waddle rocks side-to-side through an <strong>11.1&deg; roll arc</strong> (over 2.6 times the standard walk's subtle 4.2&deg; oscillation), and lifts each swinging foot <strong>30% higher (1.91 cm vs 1.47 cm)</strong> to clear the ground dynamically.
+      </div>
+    </div>
+
+    <!-- Variant 1 -->
+    <div class="variant-card">
+      <div class="variant-header">
+        <div>
+          <h2 class="variant-title">Variant 1: Gentle Waddle <span>(Recommended)</span></h2>
+          <p style="color: var(--muted); font-size: 0.9rem; margin-top: 4px;">
+            Target Sway: 8° roll sway | Knee Crouch: 0.20 rad (~11.5°) | Height: 11.5 cm | Velocity: 0.25 m/s
+          </p>
+        </div>
+        <div class="status-pass">✅ PASSED ALL ACCEPTANCE CRITERIA</div>
+      </div>
+
+      <div class="media-row">
+        <div class="media-box">
+          <video controls autoplay loop muted playsinline src="v1_perspective.mp4"></video>
+          <div class="media-caption">Perspective Camera: Natural Crouched Duck Stride</div>
+        </div>
+        <div class="media-box">
+          <video controls autoplay loop muted playsinline src="v1_front.mp4"></video>
+          <div class="media-caption">Frontal Camera: Characteristic Coordinated Lateral Waddle</div>
+        </div>
+      </div>
+
+      <h3 style="font-size: 1.1rem; margin-top: 16px; margin-bottom: 8px;">Keyframe Gait Sequence (50 Hz Physical Simulation)</h3>
+      <div class="keyframes-strip">
+        <div class="kf-item">
+          <img src="keyframes_v1/t0_start.png" alt="Start">
+          <div class="kf-label">t=0.0s: Crouch Prep</div>
+        </div>
+        <div class="kf-item">
+          <img src="keyframes_v1/t25_step_left.png" alt="Left Step">
+          <div class="kf-label">t=1.0s: Left Stance / Roll</div>
+        </div>
+        <div class="kf-item">
+          <img src="keyframes_v1/t50_step_right.png" alt="Right Step">
+          <div class="kf-label">t=2.0s: Right Stance / Roll</div>
+        </div>
+        <div class="kf-item">
+          <img src="keyframes_v1/t75_mid_stride.png" alt="Mid Stride">
+          <div class="kf-label">t=3.0s: Alternating Foot Lift</div>
+        </div>
+        <div class="kf-item">
+          <img src="keyframes_v1/t100_final_walk.png" alt="Final">
+          <div class="kf-label">t=4.0s: Upright Duck Walk</div>
+        </div>
+      </div>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Physical Metric</th>
+              <th>Assertion Threshold</th>
+              <th>Measured Value</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Continuous Locomotion Stability</td>
+              <td>>= 10.0s without falling</td>
+              <td>10.0s (0 falls in 7/7 trials)</td>
+              <td class="check">PASS</td>
+            </tr>
+            <tr>
+              <td>Forward Velocity Tracking</td>
+              <td>|vx - 0.25| &le; 0.08 m/s</td>
+              <td>0.249 m/s (error: 0.001 m/s)</td>
+              <td class="check">PASS</td>
+            </tr>
+            <tr>
+              <td>Torso Upright Pitch (No Lean Gaming)</td>
+              <td>Max &le; 12.0°, Mean &le; 8.0°</td>
+              <td>Max: 7.4°, Mean: +4.1°</td>
+              <td class="check">PASS</td>
+            </tr>
+            <tr>
+              <td>Head/Neck Decoupled Error</td>
+              <td>Max &le; 10.0° from Home</td>
+              <td>Max: 6.4°, Mean: 2.8°</td>
+              <td class="check">PASS</td>
+            </tr>
+            <tr>
+              <td>Alternating Foot Ground Clearance</td>
+              <td>Apex &ge; 1.0 cm</td>
+              <td>Left: 1.91 cm, Right: 1.71 cm</td>
+              <td class="check">PASS</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Variant 3 -->
+    <div class="variant-card">
+      <div class="variant-header">
+        <div>
+          <h2 class="variant-title">Variant 3: Deep Crouch Waddle</h2>
+          <p style="color: var(--muted); font-size: 0.9rem; margin-top: 4px;">
+            Target Sway: 11° roll sway | Knee Crouch: 0.32 rad (~18.3°) | Height: 11.0 cm | Velocity: 0.25 m/s
+          </p>
+        </div>
+        <div class="status-pass">✅ PASSED ALL ACCEPTANCE CRITERIA</div>
+      </div>
+
+      <div class="media-row">
+        <div class="media-box">
+          <video controls autoplay loop muted playsinline src="v3_perspective.mp4"></video>
+          <div class="media-caption">Perspective Camera: Deep Knees Low Stance</div>
+        </div>
+        <div class="media-box">
+          <video controls autoplay loop muted playsinline src="v3_front.mp4"></video>
+          <div class="media-caption">Frontal Camera: Pronounced Side-to-Side Roll</div>
+        </div>
+      </div>
+
+      <h3 style="font-size: 1.1rem; margin-top: 16px; margin-bottom: 8px;">Keyframe Gait Sequence (50 Hz Physical Simulation)</h3>
+      <div class="keyframes-strip">
+        <div class="kf-item">
+          <img src="keyframes_v3_perspective/t0_start.png" alt="Start">
+          <div class="kf-label">t=0.0s: Deep Crouch</div>
+        </div>
+        <div class="kf-item">
+          <img src="keyframes_v3_perspective/t25_step_left.png" alt="Left Step">
+          <div class="kf-label">t=1.0s: Left Stance / Roll</div>
+        </div>
+        <div class="kf-item">
+          <img src="keyframes_v3_perspective/t50_step_right.png" alt="Right Step">
+          <div class="kf-label">t=2.0s: Right Stance / Roll</div>
+        </div>
+        <div class="kf-item">
+          <img src="keyframes_v3_perspective/t75_mid_stride.png" alt="Mid Stride">
+          <div class="kf-label">t=3.0s: Dynamic Waddle</div>
+        </div>
+        <div class="kf-item">
+          <img src="keyframes_v3_perspective/t100_final_walk.png" alt="Final">
+          <div class="kf-label">t=4.0s: Forward Locomotion</div>
+        </div>
+      </div>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Physical Metric</th>
+              <th>Assertion Threshold</th>
+              <th>Measured Value</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Continuous Locomotion Stability</td>
+              <td>>= 10.0s without falling</td>
+              <td>10.0s (0 falls in 7/7 trials)</td>
+              <td class="check">PASS</td>
+            </tr>
+            <tr>
+              <td>Forward Velocity Tracking</td>
+              <td>|vx - 0.25| &le; 0.08 m/s</td>
+              <td>0.275 m/s (error: 0.025 m/s)</td>
+              <td class="check">PASS</td>
+            </tr>
+            <tr>
+              <td>Torso Upright Pitch (No Lean Gaming)</td>
+              <td>Max &le; 12.0°, Mean &le; 8.0°</td>
+              <td>Max: 6.8°, Mean: +3.0°</td>
+              <td class="check">PASS</td>
+            </tr>
+            <tr>
+              <td>Head/Neck Decoupled Error</td>
+              <td>Max &le; 10.0° from Home</td>
+              <td>Max: 5.3°, Mean: 1.7°</td>
+              <td class="check">PASS</td>
+            </tr>
+            <tr>
+              <td>Alternating Foot Ground Clearance</td>
+              <td>Apex &ge; 1.0 cm</td>
+              <td>Left: 2.64 cm, Right: 1.69 cm</td>
+              <td class="check">PASS</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Biomechanical Invariants Codified -->
+    <div class="variant-card">
+      <h2 style="font-size: 1.4rem; margin-bottom: 14px; color: #fbbf24;">🔬 Biomechanical &amp; RL Invariants Verified</h2>
+      <ul style="padding-left: 20px; color: var(--muted); line-height: 1.8;">
+        <li><strong style="color: var(--text);">Invariant 1 (Visual Ground Truth):</strong> Verified using world-space 50 Hz MuJoCo EGL renderers and multi-modal keyframe audits rather than relying on scalar RL reward curves.</li>
+        <li><strong style="color: var(--text);">Invariant 6 (Dynamic Limit Cycles):</strong> Avoided static single-foot flamingo balancing (physically infeasible with MicroDuck's 38% head mass). Stabilized via synchronized alternating lateral sway.</li>
+        <li><strong style="color: var(--text);">Invariant 7 (Zero Attempt-Tax During Discovery):</strong> Initialized action-rate and torque penalties near zero during early iterations to prevent premature policy collapse.</li>
+        <li><strong style="color: var(--text);">Invariant 8 (Oscillating Segment EMA):</strong> Permitted natural head bobbing during walking strides without penalizing high-frequency periodic oscillation.</li>
+      </ul>
+    </div>
+
+    <footer>
+      MicroDuck Reinforcement Learning System &bull; MuJoCo &amp; mjlab 1.3 &bull; Modal Cloud Compute &bull; Pollen Robotics
+    </footer>
+  </div>
+</body>
+</html>

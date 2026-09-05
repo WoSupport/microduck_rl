@@ -67,7 +67,61 @@ from .microduck_roulade_env_cfg import (
     make_microduck_roulade_env_cfg,
     MicroduckRouladeRlCfg,
 )
+from .microduck_leg_lift_env_cfg import (
+    make_microduck_leg_lift_env_cfg,
+    MicroduckLegLiftRlCfg,
+)
+from .microduck_duck_walk_env_cfg import (
+    make_microduck_duck_walk_env_cfg,
+    MicroduckDuckWalkRlCfg,
+)
+from .microduck_head_nod_env_cfg import (
+    make_microduck_head_nod_env_cfg,
+    MicroduckHeadNodRlCfg,
+)
 from .backlash import make_backlash_variant
+
+import dataclasses
+
+# Duck Walk tasks & sweep variants
+_SWEEP_VARIANTS = [
+    ("Mjlab-DuckWalk-Flat-MicroDuck", 10.0, 2.5, 0.25, "v0_baseline"),
+    ("Mjlab-DuckWalk-V1-Flat-MicroDuck", 8.0, 2.0, 0.20, "v1_gentle_waddle"),
+    ("Mjlab-DuckWalk-V2-Flat-MicroDuck", 11.0, 2.5, 0.25, "v2_classic_waddle"),
+    ("Mjlab-DuckWalk-V3-Flat-MicroDuck", 11.0, 2.5, 0.32, "v3_deep_crouch"),
+    ("Mjlab-DuckWalk-V4-Flat-MicroDuck", 14.0, 3.0, 0.28, "v4_pronounced_waddle"),
+]
+
+for task_id, waddle_deg, waddle_weight, crouch_knee, run_name in _SWEEP_VARIANTS:
+    rl_cfg = dataclasses.replace(
+        MicroduckDuckWalkRlCfg,
+        run_name=run_name,
+    )
+    register_mjlab_task(
+        task_id=task_id,
+        env_cfg=make_microduck_duck_walk_env_cfg(
+            waddle_angle_deg=waddle_deg,
+            waddle_reward_weight=waddle_weight,
+            crouch_knee_rad=crouch_knee,
+        ),
+        play_env_cfg=make_microduck_duck_walk_env_cfg(
+            play=True,
+            waddle_angle_deg=waddle_deg,
+            waddle_reward_weight=waddle_weight,
+            crouch_knee_rad=crouch_knee,
+        ),
+        rl_cfg=rl_cfg,
+        runner_cls=MicroduckOnPolicyRunner,
+    )
+
+# Head Nod task — passionate agreement
+register_mjlab_task(
+    task_id="Mjlab-HeadNod-Flat-MicroDuck",
+    env_cfg=make_microduck_head_nod_env_cfg(),
+    play_env_cfg=make_microduck_head_nod_env_cfg(play=True),
+    rl_cfg=MicroduckHeadNodRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
 
 # Standard velocity task
 register_mjlab_task(
@@ -225,6 +279,15 @@ register_mjlab_task(
     runner_cls=MicroduckOnPolicyRunner,
 )
 
+# LegLift — 90° single-leg front raise and recovery to 2-feet stand.
+register_mjlab_task(
+    task_id="Mjlab-LegLift-Flat-MicroDuck",
+    env_cfg=make_microduck_leg_lift_env_cfg(),
+    play_env_cfg=make_microduck_leg_lift_env_cfg(play=True),
+    rl_cfg=MicroduckLegLiftRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
+
 # Backlash variants — ±1° serial gear play per servo + encoder-through-backlash
 # actuator feedback and joint obs (see tasks/backlash.py). Each family keeps its
 # base task's collision model: Velocity → robot_walk_backlash.xml,
@@ -259,6 +322,7 @@ _BACKLASH_TASKS = (
     ("Mjlab-Velocity-Swizzle-Backlash-MicroDuck", make_microduck_velocity_swizzle_env_cfg, {}, MicroduckSwizzleRlCfg, _BL_ROLLERS),
     ("Mjlab-RollerCrouch-Flat-Backlash-MicroDuck", make_microduck_roller_crouch_env_cfg, {}, MicroduckRollerCrouchRlCfg, _BL_ROLLERS),
     ("Mjlab-RollerSlope-Flat-Backlash-MicroDuck", make_microduck_roller_slope_env_cfg, {}, MicroduckRollerSlopeRlCfg, _BL_ROLLERS),
+    ("Mjlab-LegLift-Flat-Backlash-MicroDuck", make_microduck_leg_lift_env_cfg, {}, MicroduckLegLiftRlCfg, _BL_ALLCOL),
 )
 for _task_id, _make_cfg, _kw, _rl_cfg, _robot_cfg in _BACKLASH_TASKS:
     register_mjlab_task(

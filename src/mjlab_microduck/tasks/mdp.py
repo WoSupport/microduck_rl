@@ -15,7 +15,7 @@ from mjlab.entity import Entity
 from mjlab.tasks.velocity.mdp.velocity_command import UniformVelocityCommand, UniformVelocityCommandCfg
 from mjlab.tasks.velocity.mdp import observations as _velocity_obs
 from mjlab.managers.command_manager import CommandTerm
-from mjlab.managers import CommandTermCfg
+from mjlab.managers import CommandTermCfg, RewardTermCfg
 from mjlab.managers.event_manager import requires_model_fields
 from mjlab.utils.lab_api.math import matrix_from_quat, wrap_to_pi, quat_apply, quat_from_angle_axis
 from rsl_rl.algorithms.ppo import PPO as _PPO
@@ -7186,3 +7186,553 @@ def roulade_lateral_velocity_penalty(
     """Body-frame lateral (y) linear velocity² — keeps the roll straight."""
     asset: Entity = env.scene[asset_cfg.name]
     return torch.nan_to_num(asset.data.root_link_lin_vel_b[:, 1].pow(2), nan=0.0)
+
+
+# --------------------------------------------------------------------------- #
+# Leg Lift (Front 90°) task machinery                                         #
+# --------------------------------------------------------------------------- #
+
+
+class LegLiftPhaseCommand(GroundPickPhaseCommand):
+    """Phase-encoding command for the leg lift task.
+
+    command = [cos(2π*phase), sin(2π*phase), 0]
+    Phase ∈ [0, 1) drives the lift, hold, lower, and settle cycle.
+    """
+
+    PERIOD: float = 4.0
+
+
+@_dataclass(kw_only=True)
+class LegLiftPhaseCommandCfg(UniformVelocityCommandCfg):
+    class_type: type = LegLiftPhaseCommand
+    period: float = 4.0
+    randomize_phase: bool = True
+
+    def build(self, env: ManagerBasedRlEnv) -> "LegLiftPhaseCommand":
+        return LegLiftPhaseCommand(self, env)
+
+
+def leg_lift_trajectory_tau(
+    phase: torch.Tensor,
+    lift_end: float = 0.35,
+    hold_end: float = 0.45,
+    return_end: float = 0.80,
+) -> torch.Tensor:
+    """Computes normalized motion progress tau ∈ [0, 1] for Leg Lift:
+    - [0, lift_end): smooth rise 0 -> 1 via 0.5 * (1 - cos(pi * phase / lift_end))
+    - [lift_end, hold_end): constant 1.0 (peak hold at 90 deg)
+    - [hold_end, return_end): smooth descent 1 -> 0 via 0.5 * (1 + cos(pi * (phase - hold_end) / (return_end - hold_end)))
+    - [return_end, 1.0): constant 0.0 (standing rest)
+    """
+    tau = torch.zeros_like(phase)
+    # Rising
+    m_rise = (phase < lift_end) & (lift_end > 0)
+    tau = torch.where(m_rise, 0.5 * (1.0 - torch.cos(torch.pi * phase / lift_end)), tau)
+    # Hold peak
+    m_hold = (phase >= lift_end) & (phase < hold_end)
+    tau = torch.where(m_hold, torch.ones_like(phase), tau)
+    # Lowering / Return
+    m_ret = (phase >= hold_end) & (phase < return_end) & (return_end > hold_end)
+    tau = torch.where(
+        m_ret,
+        0.5 * (1.0 + torch.cos(torch.pi * (phase - hold_end) / (return_end - hold_end))),
+        tau,
+    )
+    # Settle: phase >= return_end is 0.0
+    return tau
+
+
+def leg_lift_pose_phased(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+    std: float = 0.25,
+    command_name: str = "twist",
+    joint_indices: Optional[list] = None,
+    peak_overrides: Optional[dict] = None,
+    lift_end: float = 0.35,
+    hold_end: float = 0.45,
+    return_end: float = 0.80,
+) -> torch.Tensor:
+    """Reward matching the time-varying target pose across the leg lift cycle."""
+    asset = env.scene[asset_cfg.name]
+    joint_pos = _servo_joint_pos(env, asset)
+    home_pos = _servo_default_joint_pos(env, asset).clone()
+    peak_pos = home_pos.clone()
+    if peak_overrides:
+        for idx, val in peak_overrides.items():
+            peak_pos[:, idx] = val
+
+    phase = _gp_phase(env, command_name)
+    tau = leg_lift_trajectory_tau(phase, lift_end, hold_end, return_end).unsqueeze(-1)
+    target_pos = home_pos * (1.0 - tau) + peak_pos * tau
+
+    if joint_indices is not None:
+        joint_pos = joint_pos[:, joint_indices]
+        target_pos = target_pos[:, joint_indices]
+    return torch.exp(-((joint_pos - target_pos) / std) ** 2).mean(dim=-1)
+
+
+def leg_lift_elevation_phased(
+    env: ManagerBasedRlEnv,
+    hip_body_name: str = "upper_leg_right",
+    foot_site_name: str = "right_foot",
+    std: float = 0.20,
+    command_name: str = "twist",
+    lift_end: float = 0.35,
+    hold_end: float = 0.45,
+    return_end: float = 0.80,
+) -> torch.Tensor:
+    """Reward right leg forward elevation angle theta = atan2(dx, -dz) tracking target angle."""
+    from mjlab.utils.lab_api.math import quat_apply_inverse
+
+    asset = env.scene["robot"]
+    hip_id = asset.find_bodies(hip_body_name)[0][0]
+    site_id = asset.find_sites(foot_site_name)[0][0]
+    hip_pos = asset.data.body_com_pos_w[:, hip_id, :]
+    foot_pos = asset.data.site_pos_w[:, site_id, :]
+
+    v_world = foot_pos - hip_pos
+
+    # In gravity-aligned world frame: +x forward, +z up, -z down
+    dx = v_world[:, 0]
+    dz = v_world[:, 2]
+    theta = torch.atan2(dx, -dz)
+
+    phase = _gp_phase(env, command_name)
+    tau = leg_lift_trajectory_tau(phase, lift_end, hold_end, return_end)
+    # Peak physical elevation angle for straight leg max (+90° hip pitch, 0° knee) is ~59.3° (1.035 rad)
+    target_theta = tau * 1.035
+
+    return torch.exp(-((theta - target_theta) / std) ** 2)
+
+
+def leg_lift_support_foot_grounded(
+    env: ManagerBasedRlEnv,
+    sensor_name: str = "support_foot_ground_contact",
+    command_name: str = "twist",
+) -> torch.Tensor:
+    """Reward support foot (left foot) continuous ground contact."""
+    if sensor_name not in env.scene.sensors:
+        return torch.zeros(env.num_envs, device=env.device)
+    sensor = env.scene.sensors[sensor_name]
+    found = sensor.data.found  # (num_envs, 1) or (num_envs,)
+    if found.dim() > 1:
+        in_contact = (found.sum(dim=-1) > 0).float()
+    else:
+        in_contact = (found > 0).float()
+    return in_contact
+
+
+def leg_lift_both_feet_grounded_phased(
+    env: ManagerBasedRlEnv,
+    sensor_name: str = "feet_ground_contact",
+    command_name: str = "twist",
+    return_end: float = 0.80,
+) -> torch.Tensor:
+    """Reward both feet grounded during the standing settle phase (phase >= return_end)."""
+    if sensor_name not in env.scene.sensors:
+        return torch.zeros(env.num_envs, device=env.device)
+    sensor = env.scene.sensors[sensor_name]
+    found = sensor.data.found  # (num_envs, 2)
+    if found.dim() > 1:
+        both_in_contact = (found.sum(dim=-1) >= 2).float()
+    else:
+        both_in_contact = (found >= 2).float()
+    phase = _gp_phase(env, command_name)
+    gate = (phase >= return_end).float()
+    return gate * both_in_contact
+
+
+def leg_lift_com_over_support_foot_phased(
+    env: ManagerBasedRlEnv,
+    foot_site_name: str = "left_foot",
+    std: float = 0.03,
+    command_name: str = "twist",
+    lift_end: float = 0.35,
+    hold_end: float = 0.45,
+    return_end: float = 0.80,
+) -> torch.Tensor:
+    """Reward shifting the robot's trunk Center of Mass laterally over the left support foot."""
+    asset = env.scene["robot"]
+    site_id = asset.find_sites(foot_site_name)[0][0]
+    foot_pos_w = asset.data.site_pos_w[:, site_id, :]
+    root_pos_w = asset.data.root_link_pos_w
+
+    # Lateral (Y) displacement between pelvis and support foot
+    # In nominal stand, root is at y~0 and left foot is at y~-0.035m (dy ~ 0.035m)
+    # When weight is shifted over the left foot, dy -> 0.0m
+    dy = torch.abs(root_pos_w[:, 1] - foot_pos_w[:, 1])
+
+    phase = _gp_phase(env, command_name)
+    tau = leg_lift_trajectory_tau(phase, lift_end, hold_end, return_end)
+    target_dy = (1.0 - tau) * 0.035
+
+    return torch.exp(-((dy - target_dy) / std) ** 2)
+
+
+def leg_lift_fell_over(
+    env: ManagerBasedRlEnv,
+    max_tilt_rad: float = math.radians(45.0),
+    min_trunk_height: float = 0.085,
+    max_neck_pitch_error: float = 0.60,
+) -> torch.Tensor:
+    """Terminate episode immediately if the robot collapses to floor, tilts > 45°, or faceplants."""
+    from mjlab.utils.lab_api.math import quat_apply_inverse
+
+    asset = env.scene["robot"]
+    # 1. Base height check (prevents collapsing onto floor; nominal stand is 0.125m)
+    trunk_z = asset.data.root_link_pos_w[:, 2]
+    trunk_collapsed = trunk_z < min_trunk_height
+
+    # 2. Base tilt check against gravity vertical (allows natural compliant lean up to 45°)
+    quat = asset.data.root_link_quat_w
+    grav_w = torch.tensor([0.0, 0.0, -1.0], device=env.device).repeat(env.num_envs, 1)
+    grav_b = quat_apply_inverse(quat, grav_w)
+    tilt_angle = torch.acos(torch.clamp(-grav_b[:, 2], -1.0, 1.0))
+    tilted_too_far = tilt_angle > max_tilt_rad
+
+    # 3. Head pitch check (nominal is +0.3491 rad; prevents hard floor faceplants)
+    joint_pos = asset.data.joint_pos
+    neck_pitch = joint_pos[:, 5]
+    neck_dipped = torch.abs(neck_pitch - 0.3491) > max_neck_pitch_error
+
+    return trunk_collapsed | tilted_too_far | neck_dipped
+
+
+# ─── Duck Walk Task MDP Functions ─────────────────────────────────────────────
+
+def pitch_upright(
+    env: ManagerBasedRlEnv,
+    std: float = 0.22,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Reward for keeping trunk pitch upright while allowing lateral roll to waddle.
+
+    Penalizes forward/backward tilt error (projected gravity in body x) using a Gaussian.
+    """
+    from mjlab.utils.lab_api.math import quat_apply_inverse
+
+    asset: Entity = env.scene[asset_cfg.name]
+    quat = asset.data.root_link_quat_w
+    grav_w = asset.data.gravity_vec_w
+    grav_b = quat_apply_inverse(quat, grav_w)
+    pitch_err_sq = torch.square(grav_b[:, 0])
+    return torch.exp(-pitch_err_sq / ((std * 9.81) ** 2))
+
+
+def waddle_roll_reward(
+    env: ManagerBasedRlEnv,
+    waddle_angle_rad: float = math.radians(10.0),
+    std_rad: float = math.radians(6.0),
+    sensor_name: str = "feet_ground_contact",
+    command_name: str = "twist",
+    command_threshold: float = 0.05,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Reward for coordinated lateral waddle roll synchronized with foot contact.
+
+    When left foot is in stance and right foot swings: target roll is LEFT (grav_b[:, 1] > 0).
+    When right foot is in stance and left foot swings: target roll is RIGHT (grav_b[:, 1] < 0).
+    When double support or stationary: target roll is upright (grav_b[:, 1] = 0).
+    """
+    from mjlab.utils.lab_api.math import quat_apply_inverse
+
+    asset: Entity = env.scene[asset_cfg.name]
+    quat = asset.data.root_link_quat_w
+    grav_w = asset.data.gravity_vec_w
+    grav_b = quat_apply_inverse(quat, grav_w)  # [B, 3]
+
+    if sensor_name in env.scene.sensors:
+        contacts = env.scene.sensors[sensor_name].data.found[:, :2]  # left, right
+        c_left = contacts[:, 0].float()
+        c_right = contacts[:, 1].float()
+        stance_diff = torch.clamp(c_left - c_right, -1.0, 1.0)
+    else:
+        stance_diff = torch.zeros(env.num_envs, device=env.device)
+
+    # Check walking command
+    if command_name in env.command_manager._terms:
+        cmd = env.command_manager.get_command(command_name)
+        lin_speed = torch.linalg.norm(cmd[:, :2], dim=1)
+        active_mask = (lin_speed > command_threshold).float()
+    else:
+        active_mask = torch.ones(env.num_envs, device=env.device)
+
+    # Target lateral gravity component: +9.81*sin(waddle) when left down, -9.81*sin(waddle) when right down
+    target_gy = 9.81 * math.sin(waddle_angle_rad) * stance_diff * active_mask
+    std_gy = 9.81 * math.sin(max(std_rad, 0.01))
+
+    roll_err_sq = torch.square(grav_b[:, 1] - target_gy)
+    return torch.exp(-roll_err_sq / (std_gy ** 2))
+
+
+class duck_walk_posture:
+    """Variable posture reward tailored for duck walk crouching and leg splay."""
+
+    def __init__(self, cfg: RewardTermCfg, env: ManagerBasedRlEnv):
+        from mjlab.utils.lab_api.string import resolve_matching_names_values
+
+        asset: Entity = env.scene[cfg.params["asset_cfg"].name]
+        default_joint_pos = asset.data.default_joint_pos.clone()
+        assert default_joint_pos is not None
+
+        crouch_knee = cfg.params.get("crouch_knee_rad", 0.25)
+        hip_splay = cfg.params.get("hip_splay_rad", 0.04)
+
+        # Apply crouch offsets to default pose
+        # Left leg (knee is negative, hip_pitch is negative, ankle is positive, hip_roll is negative)
+        l_knee_idx, _ = asset.find_joints(".*left_knee.*")
+        r_knee_idx, _ = asset.find_joints(".*right_knee.*")
+        l_hp_idx, _ = asset.find_joints(".*left_hip_pitch.*")
+        r_hp_idx, _ = asset.find_joints(".*right_hip_pitch.*")
+        l_ank_idx, _ = asset.find_joints(".*left_ankle.*")
+        r_ank_idx, _ = asset.find_joints(".*right_ankle.*")
+        l_hr_idx, _ = asset.find_joints(".*left_hip_roll.*")
+        r_hr_idx, _ = asset.find_joints(".*right_hip_roll.*")
+
+        if l_knee_idx: default_joint_pos[:, l_knee_idx] -= crouch_knee
+        if r_knee_idx: default_joint_pos[:, r_knee_idx] += crouch_knee
+        if l_hp_idx:   default_joint_pos[:, l_hp_idx]   -= crouch_knee * 0.45
+        if r_hp_idx:   default_joint_pos[:, r_hp_idx]   += crouch_knee * 0.45
+        if l_ank_idx:  default_joint_pos[:, l_ank_idx]  += crouch_knee * 0.45
+        if r_ank_idx:  default_joint_pos[:, r_ank_idx]  -= crouch_knee * 0.45
+        if l_hr_idx:   default_joint_pos[:, l_hr_idx]   -= hip_splay
+        if r_hr_idx:   default_joint_pos[:, r_hr_idx]   += hip_splay
+
+        self.desired_joint_pos = default_joint_pos
+
+        _, joint_names = asset.find_joints(cfg.params["asset_cfg"].joint_names)
+
+        _, _, std_standing = resolve_matching_names_values(
+            data=cfg.params["std_standing"],
+            list_of_strings=joint_names,
+        )
+        self.std_standing = torch.tensor(
+            std_standing, device=env.device, dtype=torch.float32
+        )
+
+        _, _, std_walking = resolve_matching_names_values(
+            data=cfg.params["std_walking"],
+            list_of_strings=joint_names,
+        )
+        self.std_walking = torch.tensor(
+            std_walking, device=env.device, dtype=torch.float32
+        )
+
+    def __call__(
+        self,
+        env: ManagerBasedRlEnv,
+        asset_cfg: SceneEntityCfg,
+        command_name: str = "twist",
+        walking_threshold: float = 0.01,
+        **kwargs,
+    ) -> torch.Tensor:
+
+        asset: Entity = env.scene[asset_cfg.name]
+        command = env.command_manager.get_command(command_name)
+        assert command is not None
+
+        speed = torch.norm(command[:, :2], dim=1) + torch.abs(command[:, 2])
+        standing_mask = (speed < walking_threshold).float().unsqueeze(1)
+        walking_mask = (speed >= walking_threshold).float().unsqueeze(1)
+
+        std = self.std_standing * standing_mask + self.std_walking * walking_mask
+
+        current_joint_pos = asset.data.joint_pos[:, asset_cfg.joint_ids]
+        desired_joint_pos = self.desired_joint_pos[:, asset_cfg.joint_ids]
+        error_squared = torch.square(current_joint_pos - desired_joint_pos)
+
+        return torch.exp(-torch.mean(error_squared / (std ** 2), dim=1))
+
+
+# --------------------------------------------------------------------------- #
+# Head Nod Task Machinery: Passionate Agreement                                #
+# --------------------------------------------------------------------------- #
+
+
+class HeadNodPhaseCommand(GroundPickPhaseCommand):
+    """Phase-encoding command for passionate head nodding.
+
+    Period defaults to 0.45s (~2.22 Hz) for an enthusiastic, passionate nodding cadence.
+    Command vector in twist slot: [cos(2*pi*phase), sin(2*pi*phase), 0].
+    """
+
+    PERIOD: float = 2.00
+
+
+@_dataclass(kw_only=True)
+class HeadNodPhaseCommandCfg(UniformVelocityCommandCfg):
+    class_type: type = HeadNodPhaseCommand
+    period: float = 2.00
+    randomize_phase: bool = True
+
+    def build(self, env: ManagerBasedRlEnv) -> "HeadNodPhaseCommand":
+        return HeadNodPhaseCommand(self, env)
+
+
+def _natural_head_nod_kinematics(
+    phase: torch.Tensor,
+    period: float = 2.00,
+    nod_amp: float = 0.488,       # ~28 deg base amplitude -> ~-33.8 deg peak plunge
+    nod_reb: float = 0.279,       # ~16 deg asymmetry parameter
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Computes target pitch angle and target pitch angular velocity for a 4-segment sequence:
+    3 big emphatic nods (0.50s each), followed by a pause (0.50s) held steadily at eye level.
+    Total period = 2.00s.
+    All pulse transitions satisfy C1 continuity (value = 0, velocity = 0 at all boundaries).
+    """
+    w0 = 0.00
+    w1 = 0.25
+    w2 = 0.50
+    w3 = 0.75
+
+    tau_1 = torch.clamp((phase - w0) / 0.25, 0.0, 1.0)
+    tau_2 = torch.clamp((phase - w1) / 0.25, 0.0, 1.0)
+    tau_3 = torch.clamp((phase - w2) / 0.25, 0.0, 1.0)
+
+    m_1 = ((phase >= w0) & (phase < w1)).float()
+    m_2 = ((phase >= w1) & (phase < w2)).float()
+    m_3 = ((phase >= w2) & (phase < w3)).float()
+    # Segment 4 (phase >= w3): Pause, target_pitch = 0.0, target_omega = 0.0
+
+    nod_duration = 0.50  # seconds per nod segment
+
+    def pulse_kinematics(tau, duration, amp, reb):
+        s = torch.sin(torch.pi * tau)
+        p = -amp * (s ** 2) + reb * torch.sin(2.0 * torch.pi * tau) * (s ** 2)
+        dp_dtau = -torch.pi * amp * torch.sin(2.0 * torch.pi * tau) + 2.0 * torch.pi * reb * s * torch.sin(3.0 * torch.pi * tau)
+        omega = dp_dtau / duration
+        return p, omega
+
+    p_1, w_1 = pulse_kinematics(tau_1, nod_duration, nod_amp, nod_reb)
+    p_2, w_2 = pulse_kinematics(tau_2, nod_duration, nod_amp, nod_reb)
+    p_3, w_3 = pulse_kinematics(tau_3, nod_duration, nod_amp, nod_reb)
+
+    target_pitch = m_1 * p_1 + m_2 * p_2 + m_3 * p_3
+    target_omega = m_1 * w_1 + m_2 * w_2 + m_3 * w_3
+
+    return target_pitch, target_omega
+
+
+def head_nod_world_pitch_track(
+    env: ManagerBasedRlEnv,
+    command_name: str = "twist",
+    std: float = 0.18,
+    period: float = 2.00,
+    head_site_name: str = "head_camera",
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Reward tracking a natural head nodding pitch angle in gravity-aligned world space.
+
+    Sequence: 3 big nods (0.50s each) followed by a 0.50s pause at eye level (period = 2.00s).
+    Anti-gaming & physical invariants:
+    - Pitch is measured from the forward-pointing head camera vector in world coordinates:
+      theta_head = atan2(v_z, hypot(v_x, v_y)).
+    - If the torso tilts backward to cheat, world-frame pitch drops and reward is lost.
+    """
+    from mjlab.utils.lab_api.math import quat_apply
+
+    asset: Entity = env.scene[asset_cfg.name]
+    phase = _gp_phase(env, command_name)
+
+    target_pitch, _ = _natural_head_nod_kinematics(phase, period=period)
+
+    if not hasattr(env, "_head_nod_site_idx"):
+        site_ids = asset.find_sites(head_site_name)[0]
+        env._head_nod_site_idx = int(site_ids[0])
+
+    site_quat = asset.data.site_quat_w[:, env._head_nod_site_idx, :]
+
+    forward_unit = torch.tensor([1.0, 0.0, 0.0], device=env.device).expand(
+        site_quat.shape[0], -1
+    )
+    look_world = quat_apply(site_quat, forward_unit)
+
+    vx = look_world[:, 0]
+    vy = look_world[:, 1]
+    vz = look_world[:, 2]
+    vh = torch.sqrt(torch.square(vx) + torch.square(vy)).clamp(min=1e-6)
+    theta_head = torch.atan2(vz, vh)
+
+    error = theta_head - target_pitch
+    return torch.exp(-torch.square(error / std))
+
+
+def head_nod_velocity_track(
+    env: ManagerBasedRlEnv,
+    command_name: str = "twist",
+    std: float = 1.2,
+    period: float = 2.00,
+    head_body_name: str = "jaw_soft",
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Reward matching the dynamic angular velocity of the head during natural nodding."""
+    asset: Entity = env.scene[asset_cfg.name]
+    phase = _gp_phase(env, command_name)
+
+    _, target_omega = _natural_head_nod_kinematics(phase, period=period)
+
+    if not hasattr(env, "_head_nod_body_idx"):
+        body_ids = asset.find_bodies(head_body_name)[0]
+        env._head_nod_body_idx = int(body_ids[0])
+
+    # World pitch angular velocity is -body_com_ang_vel_w[:, 1]
+    head_omega = -asset.data.body_com_ang_vel_w[:, env._head_nod_body_idx, 1]
+
+    error = head_omega - target_omega
+    return torch.exp(-torch.square(error / std))
+
+
+def head_nod_alignment(
+    env: ManagerBasedRlEnv,
+    std: float = 0.22,
+    fine_std: float = 0.08,
+    fine_weight: float = 0.5,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Penalize head yaw and roll to ensure purely sagittal nodding.
+
+    Uses a dual Gaussian: a broad basin (std=0.22 rad ~ 12.6°) to maintain gradient
+    even during large exploratory deviations, plus a fine Gaussian (fine_std=0.08 rad ~ 4.6°)
+    for precise forward centering.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    joint_pos = _servo_joint_pos(env, asset)
+    # Head joints: index 7 is head_yaw, index 8 is head_roll
+    yaw_err = joint_pos[:, 7]
+    roll_err = joint_pos[:, 8]
+    err_sq = torch.square(yaw_err) + torch.square(roll_err)
+    broad = torch.exp(-err_sq / (std ** 2))
+    fine = torch.exp(-err_sq / (fine_std ** 2))
+    return (1.0 - fine_weight) * broad + fine_weight * fine
+
+
+def dual_feet_grounded(
+    env: ManagerBasedRlEnv,
+    sensor_name: str = "feet_ground_contact",
+) -> torch.Tensor:
+    """Reward both feet maintaining continuous grounded contact (ZMP stability)."""
+    if sensor_name not in env.scene.sensors:
+        return torch.zeros(env.num_envs, device=env.device)
+    sensor = env.scene.sensors[sensor_name]
+    found = sensor.data.found
+    if found.dim() > 1:
+        both_in_contact = (found.sum(dim=-1) >= 2).float()
+    else:
+        both_in_contact = (found >= 2).float()
+    return both_in_contact
+
+
+def trunk_nominal_height(
+    env: ManagerBasedRlEnv,
+    target_height: float = 0.112,
+    std: float = 0.02,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Reward maintaining nominal bipedal standing height."""
+    asset: Entity = env.scene[asset_cfg.name]
+    trunk_z = asset.data.root_link_pos_w[:, 2]
+    error = trunk_z - target_height
+    return torch.exp(-torch.square(error / std))
+

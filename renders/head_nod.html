@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🦆 MicroDuck: 3 Big Nods + Pause Policy Showcase</title>
+  <style>
+    :root {
+      --bg: #0a0e17;
+      --card-bg: #141c2e;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent-cyan: #38bdf8;
+      --accent-green: #10b981;
+      --accent-amber: #f59e0b;
+      --border: #233148;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 24px 16px;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    header { text-align: center; margin-bottom: 32px; }
+    h1 { font-size: 2.3rem; margin-bottom: 8px; color: var(--accent-amber); }
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      background: #065f46;
+      color: #34d399;
+      margin: 4px;
+    }
+    .badge-amber {
+      background: #78350f;
+      color: #fcd34d;
+    }
+    .subtitle { color: var(--muted); font-size: 1.1rem; max-width: 800px; margin: 0 auto; }
+    
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+      margin-bottom: 32px;
+    }
+    .stat-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      text-align: center;
+    }
+    .stat-val { font-size: 1.8rem; font-weight: 700; color: var(--accent-green); }
+    .stat-label { font-size: 0.85rem; color: var(--muted); margin-top: 4px; }
+    
+    .video-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+      gap: 24px;
+      margin-bottom: 36px;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .card-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .card-title { font-size: 1.2rem; font-weight: 600; color: var(--text); }
+    .card-subtitle { font-size: 0.85rem; color: var(--muted); margin-top: 2px; }
+    .video-container {
+      width: 100%;
+      background: #000;
+      aspect-ratio: 4/3;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    video, img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .card-body {
+      padding: 16px;
+      font-size: 0.9rem;
+      color: var(--muted);
+      flex-grow: 1;
+    }
+    
+    .keyframes-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(115px, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .keyframe-card {
+      background: #0b0f19;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      text-align: center;
+      padding-bottom: 8px;
+    }
+    .keyframe-card img {
+      width: 100%;
+      aspect-ratio: 4/3;
+      object-fit: cover;
+    }
+    .keyframe-caption {
+      font-size: 0.8rem;
+      color: var(--text);
+      margin-top: 6px;
+      font-weight: 600;
+    }
+    .keyframe-sub {
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🦆 MicroDuck: 3 Big Nods + Pause Policy</h1>
+      <p class="subtitle">Three emphatic, passionate down-nods followed by a steady rest pause held for the exact duration of a nod ("YES! YES! YES! ... [settled rest]")</p>
+      <div style="margin-top: 12px;">
+        <span class="badge">Sequence Period: 2.00s</span>
+        <span class="badge">Dual-Foot Grounding: 99.5%</span>
+        <span class="badge">Peak Nod Depth: -34.2°</span>
+        <span class="badge">Pause Pitch Drift: 0.2°</span>
+        <span class="badge">Head Yaw Drift: 0.5°</span>
+        <span class="badge">Torso Pitch Tilt: 3.0°</span>
+        <span class="badge badge-amber">All 8 Invariants Passed</span>
+      </div>
+    </header>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-val">3</div>
+        <div class="stat-label">Emphatic Big Nods</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val">-34.2°</div>
+        <div class="stat-label">Peak Down-Nod Pitch</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val">0.50s</div>
+        <div class="stat-label">Pause Duration (at 0.0°)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val">99.5%</div>
+        <div class="stat-label">Dual-Foot Grounding</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val">0.5°</div>
+        <div class="stat-label">Max Lateral Yaw Drift</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val">3.0°</div>
+        <div class="stat-label">Torso Tilt (Anti-Cheating)</div>
+      </div>
+    </div>
+
+    <div class="video-grid">
+      <!-- Perspective MP4 -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Perspective View (Full Dynamic Sequence)</div>
+          <div class="card-subtitle">MP4 Video • 30 FPS • Dynamic Camera Tracking</div>
+        </div>
+        <div class="video-container">
+          <video src="three_big_nods_pause_perspective.mp4" autoplay loop muted playsinline controls></video>
+        </div>
+        <div class="card-body">
+          Full 3D visualization showing three deep, emphatic affirmative down-nods (-34.2° plunge) followed by a calm, settled 0.50s eye-level pause before seamlessly looping.
+        </div>
+      </div>
+
+      <!-- Side View MP4 -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Side Profile View (Pitch Amplitude & Pause)</div>
+          <div class="card-subtitle">MP4 Video • 30 FPS • Lateral Plane Profile</div>
+        </div>
+        <div class="video-container">
+          <video src="three_big_nods_pause_side.mp4" autoplay loop muted playsinline controls></video>
+        </div>
+        <div class="card-body">
+          Clearly highlights the 3 identical, emphatic nodding strokes (-34.2° depth) and the dead-level horizontal posture maintained throughout the 0.50s pause.
+        </div>
+      </div>
+
+      <!-- Front View MP4 -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Front View (Sagittal Centering Audit)</div>
+          <div class="card-subtitle">MP4 Video • 30 FPS • Direct Head-On View</div>
+        </div>
+        <div class="video-container">
+          <video src="three_big_nods_pause_front.mp4" autoplay loop muted playsinline controls></video>
+        </div>
+        <div class="card-body">
+          Sagittal gaze audit: dual-basin centering reward keeps beak strictly pointed forward (<0.5° lateral yaw deviation) with zero side-to-side wobble.
+        </div>
+      </div>
+
+      <!-- Animated GIF -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Continuous Animated GIF</div>
+          <div class="card-subtitle">High-Framerate Looping Animation</div>
+        </div>
+        <div class="video-container">
+          <img src="three_big_nods_pause.gif" alt="Three Big Nods + Pause GIF">
+        </div>
+        <div class="card-body">
+          Seamless animated loop of the complete 2.00s sequence: Nod 1 → Nod 2 → Nod 3 → Pause.
+        </div>
+      </div>
+    </div>
+
+    <!-- Audited Keyframes -->
+    <div class="card" style="padding: 20px; margin-bottom: 32px;">
+      <div class="card-title" style="margin-bottom: 4px;">Audited Temporal Motion Keyframes (2.00s Complete Cycle)</div>
+      <div class="card-subtitle">Off-screen EGL multi-modal keyframe snapshots verifying all 4 segments</div>
+      <div class="keyframes-row">
+        <div class="keyframe-card">
+          <img src="three_big_nods_pause_keyframes/snapshot_0_0000.png" alt="Start">
+          <div class="keyframe-caption">1. Start (0.00s)</div>
+          <div class="keyframe-sub">Pitch: 0.0° (Nominal)</div>
+        </div>
+        <div class="keyframe-card">
+          <img src="three_big_nods_pause_keyframes/snapshot_1_0015.png" alt="Nod 1 Down">
+          <div class="keyframe-caption">2. Nod 1 Down (0.30s)</div>
+          <div class="keyframe-sub">Pitch: -34.2° (Deep)</div>
+        </div>
+        <div class="keyframe-card">
+          <img src="three_big_nods_pause_keyframes/snapshot_2_0025.png" alt="Nod 1 Recovery">
+          <div class="keyframe-caption">3. Nod 1 Reset (0.50s)</div>
+          <div class="keyframe-sub">Pitch: 0.0° (Recovery)</div>
+        </div>
+        <div class="keyframe-card">
+          <img src="three_big_nods_pause_keyframes/snapshot_3_0040.png" alt="Nod 2 Down">
+          <div class="keyframe-caption">4. Nod 2 Down (0.80s)</div>
+          <div class="keyframe-sub">Pitch: -34.2° (Deep)</div>
+        </div>
+        <div class="keyframe-card">
+          <img src="three_big_nods_pause_keyframes/snapshot_4_0050.png" alt="Nod 2 Recovery">
+          <div class="keyframe-caption">5. Nod 2 Reset (1.00s)</div>
+          <div class="keyframe-sub">Pitch: 0.0° (Recovery)</div>
+        </div>
+        <div class="keyframe-card">
+          <img src="three_big_nods_pause_keyframes/snapshot_5_0065.png" alt="Nod 3 Down">
+          <div class="keyframe-caption">6. Nod 3 Down (1.30s)</div>
+          <div class="keyframe-sub">Pitch: -34.2° (Deep)</div>
+        </div>
+        <div class="keyframe-card">
+          <img src="three_big_nods_pause_keyframes/snapshot_6_0075.png" alt="Pause Start">
+          <div class="keyframe-caption">7. Pause In (1.50s)</div>
+          <div class="keyframe-sub">Pitch: 0.0° (Smooth C1)</div>
+        </div>
+        <div class="keyframe-card">
+          <img src="three_big_nods_pause_keyframes/snapshot_7_0087.png" alt="Pause Hold">
+          <div class="keyframe-caption">8. Pause Hold (1.75s)</div>
+          <div class="keyframe-sub">Pitch: 0.2° (Steady)</div>
+        </div>
+        <div class="keyframe-card">
+          <img src="three_big_nods_pause_keyframes/snapshot_8_0100.png" alt="Loop Ready">
+          <div class="keyframe-caption">9. Loop (2.00s)</div>
+          <div class="keyframe-sub">Pitch: 0.0° (Seamless)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

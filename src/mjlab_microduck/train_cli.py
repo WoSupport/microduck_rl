@@ -18,6 +18,17 @@ from __future__ import annotations
 
 import sys
 
+# WandB SDK 0.28+ compatibility patch
+try:
+    import wandb
+    _orig_settings = wandb.Settings
+    def _safe_settings(**kwargs):
+        kwargs.pop("start_method", None)
+        return _orig_settings(**kwargs)
+    wandb.Settings = _safe_settings
+except Exception:
+    pass
+
 
 def main() -> int | None:
     argv = sys.argv[1:]

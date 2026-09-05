@@ -35,6 +35,11 @@ claude_experiments/
 backup_onnx/
 
 
-logdir/.claude/
-logdir/
 logdir/.claude/worktrees/
+
+# Media artifacts (keep repos lightweight)
+renders/*.mp4
+renders/*.gif
+renders/**/*.png
+renders/*.png
+web_gallery/

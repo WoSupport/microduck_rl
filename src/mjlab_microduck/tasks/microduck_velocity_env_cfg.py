@@ -339,13 +339,13 @@ def make_microduck_velocity_env_cfg(
     cfg.rewards["angular_momentum"].weight = -0.02
 
     # Velocity tracking rewards
-    cfg.rewards["track_linear_velocity"].weight = 2.0
-    cfg.rewards["track_linear_velocity"].params["std"] = math.sqrt(0.1)
-    cfg.rewards["track_angular_velocity"].weight = 2.0
-    cfg.rewards["track_angular_velocity"].params["std"] = math.sqrt(0.5)
+    cfg.rewards["track_linear_velocity"].weight = 3.5
+    cfg.rewards["track_linear_velocity"].params["std"] = math.sqrt(0.04)
+    cfg.rewards["track_angular_velocity"].weight = 3.0
+    cfg.rewards["track_angular_velocity"].params["std"] = math.sqrt(0.25)
 
     # Action smoothness: stage-0 value; the action_rate_weight curriculum below
-    # ramps it -0.1 → -1.0 by iter 1500.
+    # ramps it -0.1 → -0.25 by iter 1500.
     cfg.rewards["action_rate_l2"].weight = -0.1
 
     cfg.rewards["foot_clearance"].params["command_threshold"] = 0.01
@@ -774,18 +774,16 @@ def make_microduck_velocity_env_cfg(
             cfg.scene.terrain.terrain_generator.num_rows = 5
 
     # action_rate weight ramp: gentle smoothing while the gait bootstraps, then
-    # tighten to -1.0 by iter 1500.
+    # tighten to -0.25 by iter 1500 (avoiding velocity undershoot while maintaining smooth actions).
     cfg.curriculum["action_rate_weight"] = CurriculumTermCfg(
         func=microduck_mdp.reward_weight,
         params={
             "reward_name": "action_rate_l2",
             "weight_stages": [
                 {"step": 0, "weight": -0.1},
-                {"step": 500 * NUM_STEPS_PER_ENV, "weight": -0.2},
-                {"step": 750 * NUM_STEPS_PER_ENV, "weight": -0.4},
-                {"step": 1000 * NUM_STEPS_PER_ENV, "weight": -0.6},
-                {"step": 1250 * NUM_STEPS_PER_ENV, "weight": -0.8},
-                {"step": 1500 * NUM_STEPS_PER_ENV, "weight": -1.0},
+                {"step": 500 * NUM_STEPS_PER_ENV, "weight": -0.15},
+                {"step": 1000 * NUM_STEPS_PER_ENV, "weight": -0.20},
+                {"step": 1500 * NUM_STEPS_PER_ENV, "weight": -0.25},
             ],
         },
     )
@@ -798,10 +796,8 @@ def make_microduck_velocity_env_cfg(
             "standing_stages": [
                 {"step": 0,           "rel_standing_envs": 0.02},
                 {"step": 500 * 24,    "rel_standing_envs": 0.05},
-                {"step": 750 * 24,    "rel_standing_envs": 0.1},
-                {"step": 1000 * 24,   "rel_standing_envs": 0.15},
-                {"step": 1500 * 24,   "rel_standing_envs": 0.2},
-                {"step": 2000 * 24,   "rel_standing_envs": 0.25},
+                {"step": 1000 * 24,   "rel_standing_envs": 0.10},
+                {"step": 1500 * 24,   "rel_standing_envs": 0.15},
             ],
         },
     )

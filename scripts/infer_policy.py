@@ -138,6 +138,7 @@ class PolicyInference:
                  sitstand_onnx_path=None,
                  kick_left_onnx_path=None, kick_right_onnx_path=None,
                  roulade_onnx_path=None,
+                 leg_lift_onnx_path=None, leg_lift_period=4.0,
                  kick_duration=3.0, roulade_duration=2.0):
         self.model = model
         self.data = data
@@ -258,10 +259,21 @@ class PolicyInference:
             print(f"{name} policy input shape: {self.behavior_sessions[name].get_inputs()[0].shape}"
                   f"  (auto-return after {duration:.1f}s)")
 
+        # Load leg lift policy
+        self.leg_lift_session = None
+        self.leg_lift_mode = False
+        self.leg_lift_phase = 0.0
+        self.leg_lift_period = leg_lift_period
+        if leg_lift_onnx_path:
+            print(f"\nLoading leg lift policy from: {leg_lift_onnx_path}")
+            self.leg_lift_session = ort.InferenceSession(leg_lift_onnx_path)
+            ll_input_shape = self.leg_lift_session.get_inputs()[0].shape
+            print(f"Leg lift policy input shape: {ll_input_shape}")
+
         # Validate at least one policy loaded. A sitstand policy can run alone
         # (it holds the stand at flag=0), unlike the old one-way sit policy.
-        if not self.walking_session and not self.standing_session and not self.is_sitstand:
-            raise ValueError("At least one of --walking, --standing or --sitstand must be provided")
+        if not self.walking_session and not self.standing_session and not self.is_sitstand and not self.leg_lift_session:
+            raise ValueError("At least one of --walking, --standing, --sitstand or --leg-lift must be provided")
 
         # Determine initial active session and policy
         if self.walking_session:
@@ -270,6 +282,10 @@ class PolicyInference:
         elif self.standing_session:
             self.current_policy = "standing"
             self.ort_session = self.standing_session
+        elif self.leg_lift_session:
+            self.current_policy = "leg_lift"
+            self.ort_session = self.leg_lift_session
+            self.leg_lift_mode = True
         else:
             # sitstand-only: start standing (posture flag 0).
             self.current_policy = "sit"
@@ -648,6 +664,55 @@ class PolicyInference:
         self.command[1] = np.sin(2 * np.pi * self.ground_pick_phase)
         self.command[2] = 0.0
 
+    def trigger_leg_lift(self):
+        """Start one leg lift cycle (lift right leg forward to 90°, hold, lower to 2-feet stand)."""
+        if self.leg_lift_session is None:
+            print("Leg lift unavailable: no --leg-lift policy loaded")
+            return
+        if self.leg_lift_mode:
+            print("Leg lift already in progress")
+            return
+        if self.sit_mode:
+            print("Cannot leg lift while sitting (press Y to stand up first)")
+            return
+        if self.behavior_mode is not None:
+            print(f"Cannot leg lift during {self.behavior_mode}")
+            return
+        self.leg_lift_mode = True
+        self.leg_lift_phase = 0.0
+        self.ort_session = self.leg_lift_session
+        self.current_policy = "leg_lift"
+        print(f"Leg lift: started (period={self.leg_lift_period:.1f}s)")
+
+    def _end_leg_lift(self):
+        """Switch back after a leg lift cycle completes."""
+        self.leg_lift_mode = False
+        self.vel_cmd = np.zeros(3, dtype=np.float32)
+        if self.walking_session:
+            self.current_policy = "walking"
+            self.ort_session = self.walking_session
+        elif self.standing_session:
+            self.current_policy = "standing"
+            self.ort_session = self.standing_session
+        self._update_command()
+        print(f"Leg lift: done → back to {self.current_policy}")
+
+    def update_leg_lift_phase(self, dt: float):
+        """Advance the leg lift phase; auto-exit when one full cycle completes."""
+        if not self.leg_lift_mode:
+            return
+        new_phase = self.leg_lift_phase + dt / self.leg_lift_period
+        if new_phase >= 1.0:
+            if self.walking_session or self.standing_session:
+                self._end_leg_lift()
+                return
+            else:
+                new_phase = new_phase % 1.0  # Continuous loop if running standalone
+        self.leg_lift_phase = new_phase
+        self.command[0] = np.cos(2 * np.pi * self.leg_lift_phase)
+        self.command[1] = np.sin(2 * np.pi * self.leg_lift_phase)
+        self.command[2] = 0.0
+
     def trigger_behavior(self, name):
         """Start an episodic behavior (kick_left / kick_right / roulade).
 
@@ -826,6 +891,8 @@ def main():
     parser.add_argument("--record", type=str, default=None, help="Enable recording mode: save observations to pickle file on Ctrl+C")
     parser.add_argument("--switch-threshold", type=float, default=0.05, help="Vel command magnitude threshold for walking/standing switch (default: 0.05)")
     parser.add_argument("--ground-pick-period", type=float, default=4.0, help="Ground pick phase period in seconds (default: 4.0)")
+    parser.add_argument("--leg-lift", type=str, default=None, help="Path to leg lift policy ONNX file (press J to activate)")
+    parser.add_argument("--leg-lift-period", type=float, default=4.0, help="Leg lift phase period in seconds (default: 4.0)")
     parser.add_argument("--new-cmd-obs", action="store_true",
                         help="Use the unified 13D command obs layout (twist+head_pose+body_pose). "
                              "Required for policies trained with the new pose-command-tracking setup. "
@@ -844,10 +911,12 @@ def main():
                              "compliant PU sole. e.g. --foot-solref 0.04")
     args = parser.parse_args()
 
-    if not args.walking and not args.standing and not args.sitstand:
-        parser.error("At least one of --walking, --standing or --sitstand must be provided")
+    if not args.walking and not args.standing and not args.sitstand and not args.leg_lift:
+        parser.error("At least one of --walking, --standing, --sitstand or --leg-lift must be provided")
     if args.sitstand and not args.new_cmd_obs:
         parser.error("--sitstand policies use the unified 13D command obs (61D); add --new-cmd-obs")
+    if args.leg_lift and not args.new_cmd_obs:
+        parser.error("--leg-lift policies use the unified 13D command obs (61D); add --new-cmd-obs")
     if (args.kick_left or args.kick_right or args.roulade) and not args.new_cmd_obs:
         parser.error("--kick-left/--kick-right/--roulade policies use the unified 13D command obs (61D); add --new-cmd-obs")
     if (args.kick_left or args.kick_right or args.roulade) and args.roller:
@@ -936,6 +1005,8 @@ def main():
         kick_left_onnx_path=args.kick_left,
         kick_right_onnx_path=args.kick_right,
         roulade_onnx_path=args.roulade,
+        leg_lift_onnx_path=args.leg_lift,
+        leg_lift_period=args.leg_lift_period,
         kick_duration=args.kick_duration,
         roulade_duration=args.roulade_duration,
     )
@@ -1010,6 +1081,8 @@ def main():
         print(f"  Switch threshold: {policy.switch_threshold} (vel cmd magnitude)")
     if policy.ground_pick_session:
         print(f"Ground pick policy: loaded  (press G)")
+    if policy.leg_lift_session:
+        print(f"Leg lift policy: loaded  (press J, period={policy.leg_lift_period:.1f}s)")
     if policy.sit_session:
         kind = "Sitstand" if policy.is_sitstand else "Sit"
         print(f"{kind} policy: loaded  (press Y to toggle)")
@@ -1129,6 +1202,8 @@ def main():
                 print(f"Policy inference: {'ON' if policy_enabled else 'OFF (paused)'}")
             elif key == "g":
                 policy.trigger_ground_pick()
+            elif key == "j":
+                policy.trigger_leg_lift()
             elif key == "k":
                 policy.trigger_behavior("kick_left")
             elif key == "l":
@@ -1255,6 +1330,7 @@ def main():
                 prev_step_time = step_start
 
                 policy.update_ground_pick_phase(actual_dt)
+                policy.update_leg_lift_phase(actual_dt)
                 policy.update_behavior(actual_dt)
 
                 if policy_enabled:

@@ -35,6 +35,8 @@ dependencies = [
     # floating `>=` lets the CUDA index (which carries newer builds than the
     # PyPI pin) drag torch 2.9.1 -> 2.13.0, an unvetted bump for mjlab/rsl_rl.
     "torch==2.9.1",
+    # Upgrade from yanked/buggy wandb 0.24.0
+    "wandb>=0.28.0",
 ]
 
 [project.entry-points."mjlab.tasks"]
