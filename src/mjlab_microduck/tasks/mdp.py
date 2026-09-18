@@ -7389,3 +7389,428 @@ def roulade_lateral_velocity_penalty(
     """Body-frame lateral (y) linear velocity² — keeps the roll straight."""
     asset: Entity = env.scene[asset_cfg.name]
     return torch.nan_to_num(asset.data.root_link_lin_vel_b[:, 1].pow(2), nan=0.0)
+
+
+# --------------------------------------------------------------------------- #
+# Duck Butt-Wiggle ("Preen Shake") Command & Rewards                          #
+# --------------------------------------------------------------------------- #
+
+class ButtWigglePhaseCommand(UniformVelocityCommand):
+    """Phase-encoding command for the Duck Butt-Wiggle ("Preen Shake") task.
+
+    Twist command layout (3D):
+        command = [cos(2π*phase), sin(2π*phase), freq]
+
+    The phase φ ∈ [0, 1) advances at commanded frequency f (default 3.0 Hz).
+    Sending [cos(2πφ), sin(2πφ), f] in the twist command slot provides a continuous,
+    smooth cyclic reference to the policy.
+    """
+
+    DEFAULT_FREQ: float = 3.0
+    FREQ_RANGE: tuple[float, float] = (2.5, 3.5)
+
+    def __init__(self, cfg, env: ManagerBasedRlEnv):
+        super().__init__(cfg, env)
+        self._phase = torch.zeros(self.num_envs, device=self.device)
+        self._freq_range = tuple(getattr(cfg, "freq_range", self.FREQ_RANGE))
+        self._default_freq = float(getattr(cfg, "default_freq", self.DEFAULT_FREQ))
+        self._randomize_phase = bool(getattr(cfg, "randomize_phase", True))
+        self._freq = torch.full((self.num_envs,), self._default_freq, device=self.device)
+
+    @property
+    def command(self) -> torch.Tensor:
+        return self.vel_command_b
+
+    def compute(self, dt: float) -> None:
+        self._phase = (self._phase + dt * self._freq) % 1.0
+        self.vel_command_b[:, 0] = torch.cos(2.0 * math.pi * self._phase)
+        self.vel_command_b[:, 1] = torch.sin(2.0 * math.pi * self._phase)
+        self.vel_command_b[:, 2] = self._freq
+
+    def reset(self, env_ids: torch.Tensor | None) -> dict:
+        if env_ids is not None and len(env_ids) > 0:
+            if self._randomize_phase:
+                self._phase[env_ids] = torch.rand(len(env_ids), device=self.device)
+            else:
+                self._phase[env_ids] = 0.0
+            f_low, f_high = self._freq_range
+            self._freq[env_ids] = f_low + (f_high - f_low) * torch.rand(len(env_ids), device=self.device)
+            self.vel_command_b[env_ids, 0] = torch.cos(2.0 * math.pi * self._phase[env_ids])
+            self.vel_command_b[env_ids, 1] = torch.sin(2.0 * math.pi * self._phase[env_ids])
+            self.vel_command_b[env_ids, 2] = self._freq[env_ids]
+        return {}
+
+    def _resample_command(self, env_ids: torch.Tensor) -> None:
+        pass
+
+    def _update_command(self) -> None:
+        pass
+
+    def _update_metrics(self) -> None:
+        pass
+
+
+@_dataclass(kw_only=True)
+class ButtWigglePhaseCommandCfg(UniformVelocityCommandCfg):
+    class_type: type = ButtWigglePhaseCommand
+    freq_range: tuple[float, float] = (2.5, 3.5)
+    default_freq: float = 3.0
+    randomize_phase: bool = True
+
+    def build(self, env: ManagerBasedRlEnv) -> "ButtWigglePhaseCommand":
+        return ButtWigglePhaseCommand(self, env)
+
+
+def butt_wiggle_composite(
+    env: ManagerBasedRlEnv,
+    command_name: str = "twist",
+    roll_amplitude: float = 0.18,
+    gaze_ori_std: float = 0.25,
+    gaze_vel_std: float = 1.5,
+    nominal_height: float = 0.126,
+    height_std: float = 0.03,
+    pitch_std: float = 0.15,
+    feet_sensor_name: str = "feet_ground_contact",
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Multiplicative composite reward for The Duck Butt-Wiggle ("Preen Shake").
+
+    Formula:
+        R_composite = R_upright * R_gaze_lock * R_wiggle
+
+    Where:
+        R_wiggle = clamp(r_pos + 0.5 * r_vel + 0.5 * r_omega, 0, 1)
+
+    By the Pythagorean trigonometric identity:
+        (dq * sin(phi) / A) + (qd * cos(phi) / (omega*A)) == sin^2(phi) + cos^2(phi) == 1.0!
+    - Full 3 Hz oscillation achieves 1.0 continuously throughout the cycle.
+    - Stationary standing yields IDENTICALLY 0.0000 (zero compromise basin)!
+    - Linear projection provides a constant, non-vanishing gradient pulling the
+      servos into high-amplitude oscillation.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    cmd = env.command_manager.get_command(command_name)
+    cos_p = cmd[:, 0]
+    sin_p = cmd[:, 1]
+    freq = cmd[:, 2]
+
+    # 1. Hip Roll Oscillation Tracking (Anchored regex to exclude backlash joints)
+    if not hasattr(env, "_hip_roll_l_id"):
+        l_ids, _ = asset.find_joints(r"^left_hip_roll$")
+        r_ids, _ = asset.find_joints(r"^right_hip_roll$")
+        env._hip_roll_l_id = l_ids[0]
+        env._hip_roll_r_id = r_ids[0]
+
+    q_l = asset.data.joint_pos[:, env._hip_roll_l_id]
+    q_r = asset.data.joint_pos[:, env._hip_roll_r_id]
+    qd_l = asset.data.joint_vel[:, env._hip_roll_l_id]
+    qd_r = asset.data.joint_vel[:, env._hip_roll_r_id]
+
+    # Lateral roll displacement from neutral (left HOME = -0.0873, right HOME = +0.0873)
+    dq_l = q_l - (-0.0873)
+    dq_r = q_r - 0.0873
+
+    # Normalized in-phase position projection: dq * sin(phi) / A (sin^2 component)
+    r_pos = torch.clamp((dq_l * sin_p + dq_r * sin_p) / (2.0 * roll_amplitude), min=0.0, max=1.0)
+
+    # Normalized in-phase velocity projection: qd * cos(phi) / (2pi f A) (cos^2 component)
+    vel_denom = 4.0 * math.pi * freq * roll_amplitude
+    r_vel = torch.clamp((qd_l * cos_p + qd_r * cos_p) / vel_denom, min=0.0, max=1.0)
+
+    # Normalized root link roll rate projection: omega_x * cos(phi) / (2pi f A)
+    omega_denom = 2.0 * math.pi * freq * roll_amplitude
+    omega_actual = asset.data.root_link_ang_vel_b[:, 0]
+    r_omega = torch.clamp((omega_actual * cos_p) / omega_denom, min=0.0, max=1.0)
+
+    # Combined wiggle: perfectly 1.0 at full 3 Hz amplitude, strictly 0.0 at rest!
+    r_wiggle = torch.clamp(r_pos + 0.5 * r_vel + 0.5 * r_omega, min=0.0, max=1.0)
+
+    # 2. Gaze-Locked Head Tracking (Vestibulo-Ocular Reflex)
+    if not hasattr(env, "_head_body_id"):
+        b_ids, _ = asset.find_bodies("jaw_soft")
+        env._head_body_id = b_ids[0]
+        # Record reference neutral head orientation in world coordinates
+        env._head_ref_quat = asset.data.body_link_quat_w[:, env._head_body_id].clone()
+
+    head_quat = asset.data.body_link_quat_w[:, env._head_body_id]
+    ref_quat = torch.tensor([-0.70710678, 0.0, 0.70710678, 0.0], device=env.device)
+    dot = torch.sum(head_quat * ref_quat, dim=-1).abs()
+    err_ori = 2.0 * (1.0 - dot)
+    r_gaze_ori = torch.exp(-err_ori / (gaze_ori_std ** 2))
+
+    head_ang_vel = asset.data.body_link_ang_vel_w[:, env._head_body_id]
+    head_omega_sq = (head_ang_vel ** 2).sum(dim=-1)
+    r_gaze_vel = torch.exp(-head_omega_sq / (gaze_vel_std ** 2))
+
+    r_gaze_lock = 0.5 * r_gaze_ori + 0.5 * r_gaze_vel
+
+    # 3. Upright and Height
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
+    r_height = torch.exp(-((z - nominal_height) / height_std) ** 2)
+
+    root_quat = asset.data.root_link_quat_w
+    err_pitch = 4.0 * (root_quat[:, 2] ** 2)
+    r_pitch = torch.exp(-err_pitch / (pitch_std ** 2))
+
+    # 4. Both Feet Grounded
+    if feet_sensor_name in env.scene.sensors:
+        found = env.scene.sensors[feet_sensor_name].data.found
+        if found.dim() > 1 and found.shape[1] >= 2:
+            r_grounded = torch.clamp(found[:, 0], 0.0, 1.0) * torch.clamp(found[:, 1], 0.0, 1.0)
+        else:
+            r_grounded = torch.clamp(found.squeeze(-1), 0.0, 1.0)
+    else:
+        r_grounded = torch.ones_like(z)
+
+    r_upright = r_height * r_pitch * r_grounded
+
+    return torch.nan_to_num(r_upright * r_gaze_lock * r_wiggle, nan=0.0)
+
+
+def butt_wiggle_lin_vel_penalty(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Penalize base linear velocity squared to prevent any forward/backward/lateral drift."""
+    asset: Entity = env.scene[asset_cfg.name]
+    lin_vel = asset.data.root_link_lin_vel_b
+    return torch.nan_to_num(torch.sum(lin_vel.pow(2), dim=-1), nan=0.0)
+
+
+def butt_wiggle_sagittal_posture_penalty(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Additive penalty for sagittal leg joints deviating from nominal STAND2 pose.
+
+    Keeps the legs securely anchored in STAND2 while hip roll oscillates.
+    """
+    asset: Entity = env.scene[asset_cfg.name]
+    if not hasattr(env, "_sagittal_joint_ids"):
+        sag_names = [
+            "^left_hip_yaw$", "^left_hip_pitch$", "^left_knee$", "^left_ankle$",
+            "^right_hip_yaw$", "^right_hip_pitch$", "^right_knee$", "^right_ankle$",
+        ]
+        ids = []
+        for pat in sag_names:
+            j_ids, _ = asset.find_joints(pat)
+            ids.append(j_ids[0])
+        env._sagittal_joint_ids = torch.tensor(ids, device=env.device, dtype=torch.long)
+        env._sagittal_target_pos = torch.tensor(
+            [0.0, -0.4579, -0.0049, 0.4530, 0.0, 0.4579, 0.0049, -0.4530],
+            device=env.device,
+            dtype=torch.float32,
+        )
+
+    sag_pos = asset.data.joint_pos[:, env._sagittal_joint_ids]
+    return torch.nan_to_num(torch.sum((sag_pos - env._sagittal_target_pos).pow(2), dim=-1), nan=0.0)
+
+
+_BUTT_WIGGLE_HOME_JOINTS = [
+    0.0,      # 0: left_hip_yaw
+    -0.0873,  # 1: left_hip_roll
+    -0.4579,  # 2: left_hip_pitch
+    -0.0049,  # 3: left_knee
+    0.4530,   # 4: left_ankle
+    0.3491,   # 5: neck_pitch
+    0.3491,   # 6: head_pitch
+    0.0,      # 7: head_yaw
+    0.0,      # 8: head_roll
+    0.0,      # 9: right_hip_yaw
+    0.0873,   # 10: right_hip_roll
+    0.4579,   # 11: right_hip_pitch
+    0.0049,   # 12: right_knee
+    -0.4530,  # 13: right_ankle
+]
+
+
+def butt_wiggle_pose_track(
+    env: ManagerBasedRlEnv,
+    command_name: str = "twist",
+    roll_amplitude: float = 0.22,
+    head_roll_amplitude: float = 0.12,
+    std: float = 0.20,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Gaussian match to the 3 Hz Butt-Wiggle target pose."""
+    asset: Entity = env.scene[asset_cfg.name]
+    cmd = env.command_manager.get_command(command_name)
+    sin_p = cmd[:, 1]
+
+    if not hasattr(env, "_bw_target"):
+        env._bw_target = torch.tensor(_BUTT_WIGGLE_HOME_JOINTS, device=env.device, dtype=torch.float32)
+
+    target = env._bw_target.unsqueeze(0).expand(env.num_envs, -1).clone()
+    target[:, 1] += roll_amplitude * sin_p
+    target[:, 10] += roll_amplitude * sin_p
+    target[:, 8] -= head_roll_amplitude * sin_p
+
+    cur = asset.data.joint_pos[:, :14]
+    err_sq = torch.sum((cur - target).pow(2), dim=-1)
+    return torch.exp(-err_sq / (std ** 2))
+
+
+def butt_wiggle_pose_l1(
+    env: ManagerBasedRlEnv,
+    command_name: str = "twist",
+    roll_amplitude: float = 0.22,
+    head_roll_amplitude: float = 0.12,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """L1 bootstrap penalty providing constant gradient towards 3 Hz Butt-Wiggle."""
+    asset: Entity = env.scene[asset_cfg.name]
+    cmd = env.command_manager.get_command(command_name)
+    sin_p = cmd[:, 1]
+
+    if not hasattr(env, "_bw_target"):
+        env._bw_target = torch.tensor(_BUTT_WIGGLE_HOME_JOINTS, device=env.device, dtype=torch.float32)
+
+    target = env._bw_target.unsqueeze(0).expand(env.num_envs, -1).clone()
+    target[:, 1] += roll_amplitude * sin_p
+    target[:, 10] += roll_amplitude * sin_p
+    target[:, 8] -= head_roll_amplitude * sin_p
+
+    cur = asset.data.joint_pos[:, :14]
+    return -torch.mean(torch.abs(cur - target), dim=-1)
+
+
+def butt_wiggle_gaze_lock(
+    env: ManagerBasedRlEnv,
+    std: float = 0.25,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Reward for keeping head level and looking forward in world frame."""
+    asset: Entity = env.scene[asset_cfg.name]
+    if not hasattr(env, "_head_body_id"):
+        b_ids, _ = asset.find_bodies("jaw_soft")
+        env._head_body_id = b_ids[0]
+        env._head_ref_quat = torch.tensor([-0.70710678, 0.0, 0.70710678, 0.0], device=env.device)
+
+    head_quat = asset.data.body_link_quat_w[:, env._head_body_id]
+    dot = torch.sum(head_quat * env._head_ref_quat, dim=-1).abs()
+    err_ori = 2.0 * (1.0 - dot)
+    return torch.exp(-err_ori / (std ** 2))
+
+
+def reset_butt_wiggle_rsi(
+    env: ManagerBasedRlEnv,
+    env_ids: torch.Tensor,
+    fraction: float = 0.3,
+    roll_amplitude: float = 0.18,
+    command_name: str = "twist",
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> None:
+    """Warm-start a fraction of environments with reference hip roll positions & velocities.
+
+    Spawns 30% of environments directly oscillating near the reference trajectory
+    to provide immediate experience of the high-reward state (Rule 2.7).
+    """
+    if len(env_ids) == 0 or fraction <= 0.0:
+        return
+    n_rsi = max(1, int(len(env_ids) * fraction))
+    perm = torch.randperm(len(env_ids), device=env.device)[:n_rsi]
+    rsi_ids = env_ids[perm]
+
+    asset: Entity = env.scene[asset_cfg.name]
+    cmd = env.command_manager.get_command(command_name)[rsi_ids]
+    sin_p = cmd[:, 1]
+    cos_p = cmd[:, 0]
+    freq = cmd[:, 2]
+
+    if not hasattr(env, "_hip_roll_l_id"):
+        l_ids, _ = asset.find_joints(r"^left_hip_roll$")
+        r_ids, _ = asset.find_joints(r"^right_hip_roll$")
+        env._hip_roll_l_id = l_ids[0]
+        env._hip_roll_r_id = r_ids[0]
+
+    q_l = -0.0873 + roll_amplitude * sin_p
+    q_r = 0.0873 + roll_amplitude * sin_p
+    qd = 2.0 * math.pi * freq * roll_amplitude * cos_p
+
+    joint_pos = asset.data.joint_pos[rsi_ids].clone()
+    joint_vel = asset.data.joint_vel[rsi_ids].clone()
+
+    joint_pos[:, env._hip_roll_l_id] = q_l
+    joint_pos[:, env._hip_roll_r_id] = q_r
+    joint_vel[:, env._hip_roll_l_id] = qd
+    joint_vel[:, env._hip_roll_r_id] = qd
+
+    asset.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=rsi_ids)
+
+
+
+
+
+def butt_wiggle_gaze_lock_bonus(
+    env: ManagerBasedRlEnv,
+    gaze_ori_std: float = 0.12,
+    gaze_vel_std: float = 0.8,
+    feet_sensor_name: str = "feet_ground_contact",
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Dedicated bonus for gaze lock stability while maintaining foot contact."""
+    asset: Entity = env.scene[asset_cfg.name]
+    if not hasattr(env, "_head_cam_site_id"):
+        s_ids, _ = asset.find_sites("head_camera")
+        env._head_cam_site_id = s_ids[0]
+    if not hasattr(env, "_head_body_id"):
+        b_ids, _ = asset.find_bodies("jaw_soft")
+        env._head_body_id = b_ids[0]
+
+    cam_quat = asset.data.site_quat_w[:, env._head_cam_site_id]
+    err_ori = 2.0 * (cam_quat[:, 1] ** 2 + cam_quat[:, 2] ** 2 + cam_quat[:, 3] ** 2)
+    r_gaze_ori = torch.exp(-err_ori / (gaze_ori_std ** 2))
+
+    head_ang_vel = asset.data.body_link_ang_vel_w[:, env._head_body_id]
+    head_omega_sq = (head_ang_vel ** 2).sum(dim=-1)
+    r_gaze_vel = torch.exp(-head_omega_sq / (gaze_vel_std ** 2))
+
+    r_gaze = r_gaze_ori * r_gaze_vel
+
+    if feet_sensor_name in env.scene.sensors:
+        found = env.scene.sensors[feet_sensor_name].data.found
+        if found.dim() > 1 and found.shape[1] >= 2:
+            r_grounded = torch.clamp(found[:, 0], 0.0, 1.0) * torch.clamp(found[:, 1], 0.0, 1.0)
+        else:
+            r_grounded = torch.clamp(found.squeeze(-1), 0.0, 1.0)
+    else:
+        r_grounded = 1.0
+
+    return torch.nan_to_num(r_gaze * r_grounded, nan=0.0)
+
+
+def butt_wiggle_knee_pitch_penalty(
+    env: ManagerBasedRlEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot", joint_names=(r".*knee.*", r".*ankle.*")),
+) -> torch.Tensor:
+    """Penalize excessive knee/ankle pitch velocity so motion stays in hip roll."""
+    asset: Entity = env.scene[asset_cfg.name]
+    vel = asset.data.joint_vel[:, asset_cfg.joint_ids]
+    return torch.nan_to_num(torch.sum(vel ** 2, dim=-1), nan=0.0)
+
+
+def butt_wiggle_feet_air_penalty(
+    env: ManagerBasedRlEnv,
+    sensor_name: str = "feet_ground_contact",
+) -> torch.Tensor:
+    """Penalize when either foot leaves the ground (both feet must stay planted)."""
+    if sensor_name not in env.scene.sensors:
+        return torch.zeros(env.num_envs, device=env.device)
+    found = env.scene.sensors[sensor_name].data.found
+    if found.dim() > 1 and found.shape[1] >= 2:
+        air_feet = (1.0 - torch.clamp(found[:, 0], 0.0, 1.0)) + (1.0 - torch.clamp(found[:, 1], 0.0, 1.0))
+    else:
+        air_feet = 1.0 - torch.clamp(found.squeeze(-1), 0.0, 1.0)
+    return air_feet
+
+
+def trunk_fall(
+    env: ManagerBasedRlEnv,
+    min_height: float = 0.08,
+    asset_cfg: SceneEntityCfg = _DEFAULT_ASSET_CFG,
+) -> torch.Tensor:
+    """Terminate if the trunk height falls below min_height."""
+    asset: Entity = env.scene[asset_cfg.name]
+    z = torch.nan_to_num(asset.data.root_link_pos_w[:, 2] - env.scene.terrain.env_origins[:, 2], nan=0.0)
+    return z < min_height
+

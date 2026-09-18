@@ -35,6 +35,7 @@ dependencies = [
     # floating `>=` lets the CUDA index (which carries newer builds than the
     # PyPI pin) drag torch 2.9.1 -> 2.13.0, an unvetted bump for mjlab/rsl_rl.
     "torch==2.9.1",
+    "wandb>=0.29.0",
 ]
 
 [project.entry-points."mjlab.tasks"]
@@ -75,6 +76,7 @@ override-dependencies = [
     # Keep onnx on a version with prebuilt wheels (1.17.0 has no py3.13 wheel and
     # fails to build from source). Pulling in bam otherwise nudges it downward.
     "onnx>=1.20.1",
+    "wandb>=0.29.0",
     # bam depends on the PyPI stub `zmq==0.0.0`, whose prebuilt wheel is invalid
     # (missing .dist-info) -> `uv sync` fails on a FRESH install (e.g. HF Jobs
     # remote build), even though a warm local cache tolerated it. We only use

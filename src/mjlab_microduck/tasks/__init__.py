@@ -75,7 +75,20 @@ from .microduck_roulade_env_cfg import (
     make_microduck_roulade_env_cfg,
     MicroduckRouladeRlCfg,
 )
+from .microduck_butt_wiggle_env_cfg import (
+    make_microduck_butt_wiggle_env_cfg,
+    MicroduckButtWiggleRlCfg,
+)
 from .backlash import make_backlash_variant
+
+# Butt-Wiggle ("Preen Shake") task: high-frequency hip-roll oscillation with gaze-locked head
+register_mjlab_task(
+    task_id="Mjlab-ButtWiggle-Flat-MicroDuck",
+    env_cfg=make_microduck_butt_wiggle_env_cfg(),
+    play_env_cfg=make_microduck_butt_wiggle_env_cfg(play=True),
+    rl_cfg=MicroduckButtWiggleRlCfg,
+    runner_cls=MicroduckOnPolicyRunner,
+)
 
 # Standard velocity task
 register_mjlab_task(
