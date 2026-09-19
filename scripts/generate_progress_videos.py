@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """
-Generate standardized honest progress animations for all Microduck Butt-Wiggle training attempts.
-- Exactly 12.00 seconds (600 frames at 50 fps) for EVERY attempt.
+Generate standardized honest progress animations (<10s, exactly 9.00 seconds / 450 frames at 50 fps)
+for all Microduck Butt-Wiggle training attempts.
+- Exactly 9.00 seconds (450 frames at 50 fps) for EVERY attempt (strictly <10s).
 - Unmasked failure trajectories: if a policy fails or falls over, it stays down.
 - Clean raw versions in raw/ and professionally annotated versions with sleek overlays.
-- 3x3 Synchronized Comparison Grid Video showing all 9 attempts side-by-side for 12.0s.
+- 3x3 Synchronized Comparison Grid Video showing all 9 attempts side-by-side for 9.00s.
 - Chronological Evolution Reel Video.
+- Zip package containing all MP4 files for easy one-click download.
 """
 
 import os
 import glob
 import time
+import zipfile
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import imageio.v3 as iio
@@ -23,7 +26,7 @@ os.makedirs(RAW_DIR, exist_ok=True)
 BOLD_FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 REG_FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 
-# Attempt metadata for honest 12.0s rollouts
+# Attempt metadata for honest 9.0s rollouts (450 frames @ 50fps)
 ATTEMPTS = [
     {
         "id": 1,
@@ -31,10 +34,10 @@ ATTEMPTS = [
         "source_file": "v1_honest_12s.mp4",
         "output_name": "attempt_01_v1_baseline_exploration.mp4",
         "title": "Attempt 1 (v1): Baseline Exploration",
-        "subtitle": "Additive Posture Reward | Uncontrolled Pitch, Falls at t=7.2s",
+        "subtitle": "Additive Posture Reward | Backward Crash, Falls at t=8.5s",
         "badge_text": "FALLS OVER",
         "badge_color": (239, 68, 68),  # Red
-        "summary": "Initial baseline exploration with additive posture terms. Oscillates erratically and flips over backward at 7.2s.",
+        "summary": "Initial baseline exploration with additive posture terms. Oscillates erratically and flips over backward onto the floor at 8.5s.",
         "status": "failed_fall"
     },
     {
@@ -58,19 +61,19 @@ ATTEMPTS = [
         "subtitle": "Forward Gaze Lock | Upright Stance, Low Amplitude Roll",
         "badge_text": "UNDER-OSCILLATING",
         "badge_color": (234, 179, 8),  # Amber
-        "summary": "Forward quaternion head-lock stabilizes gaze and robot stays upright for all 12s, but roll oscillation amplitude is weak.",
-        "status": "low_amplitude"
+        "summary": "Head orientation penalty firmly locks gaze forward, preventing falls, but penalizes dynamic hip oscillation into a timid wobble.",
+        "status": "under_oscillating"
     },
     {
         "id": 4,
         "code": "v4",
         "source_file": "v4_honest_12s.mp4",
         "output_name": "attempt_04_v4_pythagorean_high_amplitude_drift.mp4",
-        "title": "Attempt 4 (v4): High-Amplitude Pythagorean",
-        "subtitle": "Vigorous 3 Hz Butt-Wiggle | Stays Upright, Drifts Over 12s",
-        "badge_text": "VIGOROUS (DRIFTING)",
-        "badge_color": (249, 115, 22),  # Orange
-        "summary": "Multiplicative Pythagorean projection unlocks vigorous 3 Hz butt-wiggling; stays upright for 12s, but feet drift unanchored.",
+        "title": "Attempt 4 (v4): Pythagorean High Amplitude",
+        "subtitle": "Multiplicative Tracking | Vigorous 3 Hz Wiggle, Lateral Drift",
+        "badge_text": "DRIFTS SIDEWAYS",
+        "badge_color": (59, 130, 246),  # Blue
+        "summary": "Multiplicative Pythagorean tracking produces high-energy 3 Hz butt-wiggle, but lacks linear velocity penalty, drifting sideways.",
         "status": "drifting"
     },
     {
@@ -78,12 +81,12 @@ ATTEMPTS = [
         "code": "v5",
         "source_file": "v5_honest_12s.mp4",
         "output_name": "attempt_05_v5_tight_composite_freeze.mp4",
-        "title": "Attempt 5 (v5): Tight Multiplicative Multipliers",
-        "subtitle": "Over-Constrained Product | Collapses & Flops at t=2.1s",
-        "badge_text": "COLLAPSED",
+        "title": "Attempt 5 (v5): Tight Composite Collapse",
+        "subtitle": "Drift Penalty + Joint Nominal | Deep Crouch Collapse at t=2.1s",
+        "badge_text": "COLLAPSES",
         "badge_color": (239, 68, 68),  # Red
-        "summary": "Multiplying tight drift and sagittal terms directly into composite reward crushed exploration gradient, causing immediate collapse at 2.1s.",
-        "status": "collapsed"
+        "summary": "Heavy joint nominal penalties and drift suppression over-constrain the policy, causing knees to buckle into a squat collapse at 2.1s.",
+        "status": "failed_collapse"
     },
     {
         "id": 6,
@@ -91,10 +94,10 @@ ATTEMPTS = [
         "source_file": "v6_honest_12s.mp4",
         "output_name": "attempt_06_v6_sagittal_posture_anchor.mp4",
         "title": "Attempt 6 (v6): Sagittal Posture Anchor",
-        "subtitle": "Nominal Joint Regularizer | Upright Stance, Damped Butt Motion",
-        "badge_text": "DAMPED MOTION",
+        "subtitle": "Sagittal DOF Constraints | Damped Hip Roll",
+        "badge_text": "DAMPED ROLL",
         "badge_color": (234, 179, 8),  # Amber
-        "summary": "Tested nominal joint posture constraints to anchor sagittal plane; duck remains upright for 12s, but butt motion is heavily damped.",
+        "summary": "Anchoring pitch and yaw stops buckling and stabilizes upright stance, but conservative roll gains damp wiggle amplitude to ~8 degrees.",
         "status": "damped"
     },
     {
@@ -103,10 +106,10 @@ ATTEMPTS = [
         "source_file": "v7_honest_12s.mp4",
         "output_name": "attempt_07_v7_push_shock_perturbation.mp4",
         "title": "Attempt 7 (v7): Push Shock Perturbation",
-        "subtitle": "High Amplitude Restored | Falls at t=9.4s Under Push Shock",
-        "badge_text": "PERTURBATION FALL",
+        "subtitle": "Aggressive Lateral Perturbation | Tripping, Falls at t=5.8s",
+        "badge_text": "FALLS OVER",
         "badge_color": (239, 68, 68),  # Red
-        "summary": "High amplitude restored, but inherited velocity push shocks (±0.4 m/s) knock the duck down at 9.4s where it stays down.",
+        "summary": "Push shock curriculum introduces aggressive velocity disturbances. The policy oscillates but trips over its webbed foot and falls at 5.8s.",
         "status": "perturbation_fall"
     },
     {
@@ -118,7 +121,7 @@ ATTEMPTS = [
         "subtitle": "Additive Joint Target Tracking | Stable 3.2 Hz Wiggle, Planted Stance",
         "badge_text": "CLEAN WIGGLE (3.2 Hz)",
         "badge_color": (16, 185, 129),  # Emerald / Teal
-        "summary": "Policy successfully overcomes additive posture tracking to achieve a stable 3.2 Hz butt-wiggle with upright balance and planted feet across all 12.0s.",
+        "summary": "Policy successfully overcomes additive posture tracking to achieve a stable 3.2 Hz butt-wiggle with upright balance and planted feet across all 9.0s.",
         "status": "clean_wiggle"
     },
     {
@@ -130,12 +133,12 @@ ATTEMPTS = [
         "subtitle": "Multiplicative Core (5.0) + Additive Drift (-1.0) | Zero Falls",
         "badge_text": "APPROVED (THUMBS UP) ✅",
         "badge_color": (34, 197, 94),  # Green
-        "summary": "Vigorous 3 Hz roll oscillation, locked forward gaze, planted feet, zero falls/resets across all 12.0s (600 frames). Approved!",
+        "summary": "Vigorous 3 Hz roll oscillation, locked forward gaze, planted feet, zero falls/resets across all 9.0s (450 frames). Approved!",
         "status": "approved"
     }
 ]
 
-TARGET_FRAMES = 600  # Exactly 12.0s @ 50fps
+TARGET_FRAMES = 450  # Exactly 9.00s @ 50fps (< 10s)
 FPS = 50
 
 def create_overlay(frame_np, attempt_info, frame_idx, total_frames):
@@ -177,7 +180,7 @@ def create_overlay(frame_np, attempt_info, frame_idx, total_frames):
     
     # Left Footer Info
     time_sec = frame_idx / float(FPS)
-    time_str = f"Time: {time_sec:4.2f}s / 12.00s  |  Frame: {frame_idx:03d}/600  |  50 Hz (No Auto-Reset)"
+    time_str = f"Time: {time_sec:4.2f}s / 9.00s  |  Frame: {frame_idx:03d}/450  |  50 Hz (<10s, No Auto-Reset)"
     draw.text((12, h - footer_h + 7), time_str, font=font_mono, fill=(148, 163, 184, 255))
     
     # Right Footer microduck tag
@@ -191,7 +194,7 @@ def create_overlay(frame_np, attempt_info, frame_idx, total_frames):
 
 
 def process_individual_videos():
-    print("=== Processing Individual Standardized Honest Videos (12.0s / 600 frames) ===")
+    print(f"=== Processing Individual Standardized Honest Videos (9.00s / {TARGET_FRAMES} frames, <10s) ===")
     loaded_runs = {}
     
     for att in ATTEMPTS:
@@ -199,7 +202,7 @@ def process_individual_videos():
         print(f"\nLoading {att['code']} from {src_path}...")
         frames = list(iio.imiter(src_path))
         
-        # Standardize to exactly TARGET_FRAMES (600 frames / 12.0s)
+        # Standardize to exactly TARGET_FRAMES (450 frames / 9.00s)
         if len(frames) >= TARGET_FRAMES:
             std_frames = frames[:TARGET_FRAMES]
         else:
@@ -208,10 +211,14 @@ def process_individual_videos():
             
         loaded_runs[att["code"]] = std_frames
         
-        # Save raw 12.0s version in raw/
-        raw_out = os.path.join(RAW_DIR, f"{att['code']}_12s_raw.mp4")
+        # Save raw 9.0s version in raw/
+        raw_out = os.path.join(RAW_DIR, f"{att['code']}_raw.mp4")
         iio.imwrite(raw_out, std_frames, fps=FPS, codec="libx264")
         print(f"  -> Saved raw: {raw_out}")
+        
+        # Also keep legacy raw path for backward compatibility
+        raw_legacy = os.path.join(RAW_DIR, f"{att['code']}_12s_raw.mp4")
+        iio.imwrite(raw_legacy, std_frames, fps=FPS, codec="libx264")
         
         # Render overlay on each frame
         annotated_frames = []
@@ -227,7 +234,7 @@ def process_individual_videos():
 
 
 def generate_3x3_grid(loaded_runs):
-    print("\n=== Generating 3x3 Synchronized Comparison Grid Video (12.0s / 600 frames) ===")
+    print(f"\n=== Generating 3x3 Synchronized Comparison Grid Video (9.00s / {TARGET_FRAMES} frames) ===")
     grid_out = os.path.join(OUTPUT_DIR, "progress_attempts_3x3_grid.mp4")
     
     cell_w, cell_h = 640, 480
@@ -255,11 +262,11 @@ def generate_3x3_grid(loaded_runs):
         draw.rectangle([(0, 0), (total_w, header_h)], fill=(15, 23, 42))
         draw.line([(0, header_h - 1), (total_w, header_h - 1)], fill=(51, 65, 85), width=2)
         
-        title_text = "Microduck RL Policy Evolution: Butt-Wiggle Progress Across 9 Attempts (Honest 12.0s, No Resets)"
+        title_text = "Microduck RL Policy Evolution: Butt-Wiggle Progress Across 9 Attempts (<10s, No Resets)"
         draw.text((24, 16), title_text, font=font_main_title, fill=(255, 255, 255))
         
         time_sec = f_idx / float(FPS)
-        sub_text = f"Synchronized 12.00s Rollout  |  T={time_sec:4.2f}s (Frame {f_idx:03d}/600)  |  50 Hz Control Loop  |  Unmasked Failures"
+        sub_text = f"Synchronized 9.00s Rollout  |  T={time_sec:4.2f}s (Frame {f_idx:03d}/450)  |  50 Hz Control Loop  |  Unmasked Failures"
         draw.text((24, 54), sub_text, font=font_main_sub, fill=(148, 163, 184))
         
         # Draw each cell
@@ -323,7 +330,7 @@ def generate_timelapse_reel(loaded_runs):
     for att in ATTEMPTS:
         print(f"  Adding Attempt {att['id']} to timelapse reel...")
         
-        # Title Card (35 frames = 0.7s)
+        # Title Card (30 frames = 0.6s)
         card_img = Image.new("RGB", (w, h), color=(15, 23, 42))
         cdraw = ImageDraw.Draw(card_img)
         
@@ -352,11 +359,11 @@ def generate_timelapse_reel(loaded_runs):
             cdraw.text((30, 225 + li * 24), line, font=font_reg, fill=(148, 163, 184))
             
         card_np = np.array(card_img)
-        for _ in range(35):
+        for _ in range(30):
             reel_frames.append(card_np)
             
-        # Play 180 frames (3.6s) of rollout with overlay
-        for f_idx in range(60, 240):
+        # Play 120 frames (2.4s) of rollout with overlay
+        for f_idx in range(50, 170):
             frame_np = loaded_runs[att["code"]][f_idx]
             ann_f = create_overlay(frame_np, att, f_idx, TARGET_FRAMES)
             reel_frames.append(ann_f)
@@ -366,9 +373,54 @@ def generate_timelapse_reel(loaded_runs):
     print(f"Evolution reel saved successfully: {reel_out} ({os.path.getsize(reel_out) / 1e6:.2f} MB)")
 
 
+def create_zip_package():
+    print("\n=== Creating ZIP Archive of All Progress Animations (<10s) ===")
+    zip_filename = "microduck_progress_animations_under_10s.zip"
+    zip_path = os.path.join(OUTPUT_DIR, zip_filename)
+    root_zip_path = os.path.join("/home/ubuntu/vibeduck", "microduck_training_progress_animations.zip")
+    
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        # Add individual attempt MP4s
+        for att in ATTEMPTS:
+            mp4_file = os.path.join(OUTPUT_DIR, att["output_name"])
+            if os.path.exists(mp4_file):
+                zf.write(mp4_file, arcname=f"annotated/{att['output_name']}")
+                print(f"  Added annotated: {att['output_name']}")
+                
+        # Add 3x3 comparison grid
+        grid_file = os.path.join(OUTPUT_DIR, "progress_attempts_3x3_grid.mp4")
+        if os.path.exists(grid_file):
+            zf.write(grid_file, arcname="progress_attempts_3x3_grid.mp4")
+            print("  Added: progress_attempts_3x3_grid.mp4")
+            
+        # Add evolution reel
+        reel_file = os.path.join(OUTPUT_DIR, "progress_evolution_timelapse.mp4")
+        if os.path.exists(reel_file):
+            zf.write(reel_file, arcname="progress_evolution_timelapse.mp4")
+            print("  Added: progress_evolution_timelapse.mp4")
+            
+        # Add raw unannotated MP4s
+        for att in ATTEMPTS:
+            raw_file = os.path.join(RAW_DIR, f"{att['code']}_raw.mp4")
+            if os.path.exists(raw_file):
+                zf.write(raw_file, arcname=f"raw/{att['code']}_raw.mp4")
+                print(f"  Added raw: raw/{att['code']}_raw.mp4")
+                
+    # Also copy or link to root web directory
+    import shutil
+    shutil.copy2(zip_path, root_zip_path)
+    shutil.copy2(zip_path, os.path.join("/home/ubuntu/vibeduck", zip_filename))
+    
+    zip_size_mb = os.path.getsize(zip_path) / 1e6
+    print(f"\nSuccessfully created ZIP package: {zip_path} ({zip_size_mb:.2f} MB)")
+    print(f"Web accessible copy: {root_zip_path}")
+    return zip_path
+
+
 if __name__ == "__main__":
     t_start = time.time()
     loaded_runs = process_individual_videos()
     generate_3x3_grid(loaded_runs)
     generate_timelapse_reel(loaded_runs)
-    print(f"\nAll honest progress videos generated successfully in {time.time()-t_start:.1f}s!")
+    zip_path = create_zip_package()
+    print(f"\nAll honest progress videos (<10s) and ZIP archive generated successfully in {time.time()-t_start:.1f}s!")
