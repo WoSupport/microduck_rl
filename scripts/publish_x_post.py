@@ -13,32 +13,29 @@ import time
 import urllib.parse
 import argparse
 
-TWEET_1 = """We spent 9 attempts using Reinforcement Learning to teach our 15-servo biped duck robot how to wag its tail.
+TWEET_1 = """9 attempts using RL to teach our 15-servo duck robot how to wag its tail. Pure AI comedy:
 
-The result is pure AI comedy and ultimate triumph:
-• Attempt 1: Backward somersault faceplant 💥
-• Attempts 2-5: Camping in "freeze" mode to farm points 🧊
-• Attempt 8: 3.2 Hz wiggle unlocked! ★
-• Attempt 9: THE FINAL GLORIOUS TAIL WAG 🦆✨
+• Att 1: Somersault crash 💥
+• Att 2-5: Camping in 'freeze' mode to farm points 🧊
+• Att 8: 3.2 Hz wiggle! ★
+• Att 9: GLORIOUS TAIL WAG 🦆✨
 
-Full journey breakdown below 👇 #Robotics #AI"""
+Full journey 👇 #Robotics #AI"""
 
-TWEET_2 = """Why was this trick so tricky to learn?
+TWEET_2 = """Why was this so tricky to learn?
 
-When we used standard additive reward tracking, the RL optimizer discovered a hilarious "compromise basin":
-If the duck stands completely frozen, it avoids falling penalties and collects steady points with 0% risk. Peak robot laziness.
+With standard additive reward tracking, the RL policy found an unexpected 'compromise basin':
+If it stands completely frozen, it avoids falling penalties and collects steady points with 0% risk.
 
-To break the freeze, we switched to a multiplicative Pythagorean formulation where standing still yields identically 0.0000 reward. Move or starve! ⚡"""
+Peak AI laziness. Move or starve! ⚡ (2/3)"""
 
 TWEET_3 = """The Final Policy (Attempt 9):
-🦆 3.0 Hz vigorous lateral tail-wag / preen shake
-👀 Gaze-locked forward stabilization (vestibulo-ocular reflex)
-👣 Webbed feet glued to the floor with zero drift or falls
+🦆 3.0 Hz vigorous tail wag / preen shake
+👀 Gaze-locked forward stabilization
+👣 Webbed feet planted with zero drift
 ⚡ 776 KB standalone ONNX policy running at 50 Hz on Dynamixel XL330 servos
 
-Trained on NVIDIA L4 GPU via Modal.
-Code & models are open source:
-https://github.com/WoSupport/microduck_rl"""
+Code & models: https://github.com/WoSupport/microduck_rl (3/3)"""
 
 
 def get_credentials(creds_file="x_credentials.json"):
