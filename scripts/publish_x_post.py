@@ -28,7 +28,7 @@ TWEET_2 = ""
 TWEET_3 = ""
 
 
-def get_credentials(creds_file="x_credentials.json"):
+def get_credentials(creds_file=None):
     # First check env vars
     api_key = os.environ.get("X_API_KEY")
     api_secret = os.environ.get("X_API_SECRET")
@@ -43,16 +43,27 @@ def get_credentials(creds_file="x_credentials.json"):
             "access_token_secret": access_token_secret
         }
 
-    # Then check json file
-    if os.path.exists(creds_file):
-        with open(creds_file, "r") as f:
-            data = json.load(f)
-            return {
-                "api_key": data.get("api_key") or data.get("consumer_key"),
-                "api_secret": data.get("api_secret") or data.get("consumer_secret"),
-                "access_token": data.get("access_token"),
-                "access_token_secret": data.get("access_token_secret")
-            }
+    # Candidate credential paths in priority order
+    candidate_paths = []
+    if creds_file:
+        candidate_paths.append(creds_file)
+    candidate_paths.append(os.path.expanduser("~/.config/x/x_credentials.json"))
+    candidate_paths.append(os.path.expanduser("~/.config/x/credentials.json"))
+    candidate_paths.append("x_credentials.json")
+
+    for path in candidate_paths:
+        if os.path.exists(path):
+            try:
+                with open(path, "r") as f:
+                    data = json.load(f)
+                    return {
+                        "api_key": data.get("api_key") or data.get("consumer_key"),
+                        "api_secret": data.get("api_secret") or data.get("consumer_secret"),
+                        "access_token": data.get("access_token"),
+                        "access_token_secret": data.get("access_token_secret")
+                    }
+            except Exception:
+                pass
 
     return None
 
@@ -128,7 +139,7 @@ def print_manual_instructions():
 
 def main():
     parser = argparse.ArgumentParser(description="Publish Microduck Thread to X")
-    parser.add_argument("--creds", default="x_credentials.json", help="Path to x_credentials.json")
+    parser.add_argument("--creds", default=None, help="Path to credentials JSON (default: ~/.config/x/x_credentials.json)")
     parser.add_argument("--video", default="/home/ubuntu/vibeduck/youtube_shorts_microduck_tail_wag.mp4", help="Video file path")
     parser.add_argument("--manual", action="store_true", help="Print thread text & 1-click intent link")
     args = parser.parse_args()

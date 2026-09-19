@@ -10,11 +10,22 @@ import json
 import argparse
 from pathlib import Path
 
-def get_authenticated_service(secrets_file="client_secrets.json", token_file="youtube_token.json", port=8080):
+def get_system_paths():
+    sys_secrets = os.path.expanduser("~/.config/youtube/client_secrets.json")
+    sys_token = os.path.expanduser("~/.config/youtube/youtube_token.json")
+    secrets_path = sys_secrets if os.path.exists(sys_secrets) else "client_secrets.json"
+    token_path = sys_token if os.path.exists(sys_token) else (sys_token if os.path.exists(sys_secrets) else "youtube_token.json")
+    return secrets_path, token_path
+
+def get_authenticated_service(secrets_file=None, token_file=None, port=8080):
     from googleapiclient.discovery import build
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
     from google.auth.transport.requests import Request
+
+    default_secrets, default_token = get_system_paths()
+    secrets_file = secrets_file or default_secrets
+    token_file = token_file or default_token
 
     SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
     creds = None
@@ -128,8 +139,8 @@ def upload_video(youtube, video_path, title, description, tags, privacy="public"
 
 def main():
     parser = argparse.ArgumentParser(description="Upload Microduck YouTube Short")
-    parser.add_argument("--secrets", default="client_secrets.json", help="Path to Google client_secrets.json")
-    parser.add_argument("--token", default="youtube_token.json", help="Path to save/load auth token")
+    parser.add_argument("--secrets", default=None, help="Path to Google client_secrets.json (default: ~/.config/youtube/client_secrets.json)")
+    parser.add_argument("--token", default=None, help="Path to save/load auth token (default: ~/.config/youtube/youtube_token.json)")
     parser.add_argument("--privacy", default="public", choices=["public", "unlisted", "private"], help="Video privacy")
     parser.add_argument("--video", default="/home/ubuntu/vibeduck/youtube_shorts_microduck_tail_wag.mp4", help="Video file path")
     parser.add_argument("--port", type=int, default=8080, help="Local OAuth server port")
