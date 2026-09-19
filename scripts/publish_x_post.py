@@ -13,14 +13,15 @@ import time
 import urllib.parse
 import argparse
 
-SINGLE_POST = """9 attempts using RL to teach the @pollenrobotics Microduck biped how to wag its tail:
+SINGLE_POST = """Reinforcement learning fails hilariously before it works 😂
 
-• Att 1: Somersault crash 💥
-• Att 2-5: 'Freeze' mode camping 🧊
-• Att 8: 3.2 Hz wiggle! ★
-• Att 9: VIGOROUS TAIL WAG 🦆✨
+Teaching the @pollenrobotics duck robot to wag its tail:
+• Att 1: Backflip faceplant 💥
+• Att 2-5: Froze to cheat the score 🧊
+• Att 8: Almost got it! ★
+• Att 9: THE ULTIMATE TAIL WAG 🦆✨
 
-50 Hz ONNX ready for hardware! #Robotics #AI"""
+#Robotics #AI"""
 
 TWEET_1 = SINGLE_POST
 TWEET_2 = ""
