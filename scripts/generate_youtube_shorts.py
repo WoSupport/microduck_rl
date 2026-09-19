@@ -379,39 +379,51 @@ def main():
                 canvas.paste(cropped_video, (cx, cy))
             else:
                 # Scene 10: Side-by-side Outro (Left: v1 fail, Right: v9 success)
+                # PRESERVE ASPECT RATIO: Center-crop 2:3 aspect ratio from 640x480 (320x480)
                 v1_idx = (start_f + f) % len(sources["v1"])
                 v9_idx = (100 + f) % len(sources["v9"])
                 
                 img1 = Image.fromarray(sources["v1"][v1_idx])
                 img9 = Image.fromarray(sources["v9"][v9_idx])
                 
-                # Each half is 500x750
-                half_w = cw // 2
-                crop1 = img1.resize((half_w, ch), Image.Resampling.BILINEAR)
-                crop9 = img9.resize((half_w, ch), Image.Resampling.BILINEAR)
+                half_w = cw // 2  # 500
+                # Target aspect ratio is half_w / ch = 500 / 750 = 2 / 3
+                # Source is 640x480. Keep full height 480, crop width = 480 * (2/3) = 320
+                W0, H0 = img1.size  # 640, 480
+                crop_w = int(H0 * (half_w / ch))  # 320
+                crop_cx = W0 // 2
+                box = (crop_cx - crop_w//2, 0, crop_cx + crop_w//2, H0)
+                
+                crop1 = img1.crop(box).resize((half_w, ch), Image.Resampling.BILINEAR)
+                crop9 = img9.crop(box).resize((half_w, ch), Image.Resampling.BILINEAR)
                 
                 canvas.paste(crop1, (cx, cy))
                 canvas.paste(crop9, (cx + half_w, cy))
                 
-                # Divider & Labels
+                # Vertical Divider Line
                 draw = ImageDraw.Draw(canvas)
                 draw.line([(cx + half_w, cy), (cx + half_w, cy + ch)], fill=(255, 255, 255), width=4)
                 
                 # Left Tag: ATTEMPT 1
-                draw.rounded_rectangle([(cx + 12, cy + ch - 50), (cx + 220, cy + ch - 12)], radius=8, fill=(239, 68, 68, 220))
-                draw.text((cx + 24, cy + ch - 44), "ATTEMPT 1 (FAIL)", font=f_split, fill=(255, 255, 255))
+                tag1 = "ATTEMPT 1 (FAIL) ✕"
+                tw1 = int(draw.textlength(tag1, font=f_split))
+                draw.rounded_rectangle([(cx + 14, cy + 16), (cx + 14 + tw1 + 24, cy + 58)], radius=8, fill=(239, 68, 68, 230))
+                draw.text((cx + 26, cy + 24), tag1, font=f_split, fill=(255, 255, 255))
                 
                 # Right Tag: ATTEMPT 9
-                draw.rounded_rectangle([(cx + half_w + 12, cy + ch - 50), (cx + half_w + 250, cy + ch - 12)], radius=8, fill=(34, 197, 94, 220))
-                draw.text((cx + half_w + 24, cy + ch - 44), "ATTEMPT 9 (FINAL)", font=f_split, fill=(255, 255, 255))
+                tag9 = "ATTEMPT 9 (FINAL) ✓"
+                tw9 = int(draw.textlength(tag9, font=f_split))
+                draw.rounded_rectangle([(cx + half_w + 14, cy + 16), (cx + half_w + 14 + tw9 + 24, cy + 58)], radius=8, fill=(34, 197, 94, 230))
+                draw.text((cx + half_w + 26, cy + 24), tag9, font=f_split, fill=(255, 255, 255))
                 
-            # Re-draw the badge on top of video card
-            draw = ImageDraw.Draw(canvas)
-            badge_text = scene["badge_text"]
-            badge_bg = scene["badge_bg"]
-            bw = int(draw.textlength(badge_text, font=f_badge))
-            draw.rounded_rectangle([(cx + 20, cy + 20), (cx + bw + 52, cy + 72)], radius=10, fill=(badge_bg[0], badge_bg[1], badge_bg[2], 240))
-            draw.text((cx + 34, cy + 31), badge_text, font=f_badge, fill=(255, 255, 255))
+            # Re-draw the badge on top of video card (only for non-split scenes)
+            if not scene["is_split"]:
+                draw = ImageDraw.Draw(canvas)
+                badge_text = scene["badge_text"]
+                badge_bg = scene["badge_bg"]
+                bw = int(draw.textlength(badge_text, font=f_badge))
+                draw.rounded_rectangle([(cx + 20, cy + 20), (cx + bw + 52, cy + 72)], radius=10, fill=(badge_bg[0], badge_bg[1], badge_bg[2], 240))
+                draw.text((cx + 34, cy + 31), badge_text, font=f_badge, fill=(255, 255, 255))
             
             # Subtle Beat Flash / Pulse on the exact downbeat (first 3 frames of each scene)
             if f < 3:
