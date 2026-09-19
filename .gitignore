@@ -39,3 +39,9 @@ backup_onnx/
 logdir/.claude/
 logdir/
 logdir/.claude/worktrees/
+
+# Secrets and API credentials
+*credentials*.json
+*token*.json
+*secrets*.json
+.env*
