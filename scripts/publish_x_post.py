@@ -13,29 +13,18 @@ import time
 import urllib.parse
 import argparse
 
-TWEET_1 = """9 attempts using RL to teach our 15-servo duck robot how to wag its tail. Pure AI comedy:
+SINGLE_POST = """9 attempts using RL to teach the @pollenrobotics Microduck biped how to wag its tail:
 
 • Att 1: Somersault crash 💥
-• Att 2-5: Camping in 'freeze' mode to farm points 🧊
+• Att 2-5: 'Freeze' mode camping 🧊
 • Att 8: 3.2 Hz wiggle! ★
-• Att 9: GLORIOUS TAIL WAG 🦆✨
+• Att 9: VIGOROUS TAIL WAG 🦆✨
 
-Full journey 👇 #Robotics #AI"""
+50 Hz ONNX ready for hardware! #Robotics #AI"""
 
-TWEET_2 = """Why was this so tricky to learn?
-
-With standard additive reward tracking, the RL policy found an unexpected 'compromise basin':
-If it stands completely frozen, it avoids falling penalties and collects steady points with 0% risk.
-
-Peak AI laziness. Move or starve! ⚡ (2/3)"""
-
-TWEET_3 = """The Final Policy (Attempt 9):
-🦆 3.0 Hz vigorous tail wag / preen shake
-👀 Gaze-locked forward stabilization
-👣 Webbed feet planted with zero drift
-⚡ 776 KB standalone ONNX policy running at 50 Hz on Dynamixel XL330 servos
-
-Code & models: https://github.com/WoSupport/microduck_rl (3/3)"""
+TWEET_1 = SINGLE_POST
+TWEET_2 = ""
+TWEET_3 = ""
 
 
 def get_credentials(creds_file="x_credentials.json"):
@@ -94,26 +83,12 @@ def post_via_api(creds, video_path):
         print(f"\n📤 Uploading video '{video_path}' ({os.path.getsize(video_path)/1e6:.2f} MB) via chunked upload...")
         media = api_v1.media_upload(
             filename=video_path,
-            media_category="tweet_video"
+            chunked=True,
+            media_category="tweet_video",
+            wait_for_async_finalize=True
         )
         media_id = media.media_id_string
-        print(f"✅ Video uploaded! Media ID: {media_id}")
-        
-        # Check processing status for video
-        print("Waiting for Twitter video processing...")
-        while True:
-            status = api_v1.get_media_upload_status(media_id)
-            state = status.processing_info.get("state")
-            if state == "succeeded":
-                print("✅ Video processing completed!")
-                break
-            elif state == "failed":
-                print(f"❌ Video processing failed: {status.processing_info}")
-                sys.exit(1)
-            else:
-                wait_secs = status.processing_info.get("check_after_secs", 5)
-                print(f"  Processing... waiting {wait_secs}s")
-                time.sleep(wait_secs)
+        print(f"✅ Video uploaded & processed! Media ID: {media_id}")
 
     # Post Tweet 1 (with video)
     print("\n🚀 Posting Main Tweet...")
@@ -125,21 +100,8 @@ def post_via_api(creds, video_path):
     t1_id = res1.data["id"]
     print(f"✅ Main Tweet published! https://x.com/{user.screen_name}/status/{t1_id}")
 
-    # Post Tweet 2 (thread reply)
-    time.sleep(2)
-    print("\n🧵 Posting Thread Reply 1...")
-    res2 = client_v2.create_tweet(text=TWEET_2, in_reply_to_tweet_id=t1_id)
-    t2_id = res2.data["id"]
-    print(f"✅ Reply 1 published! https://x.com/{user.screen_name}/status/{t2_id}")
-
-    # Post Tweet 3 (thread reply)
-    time.sleep(2)
-    print("\n🧵 Posting Thread Reply 2...")
-    res3 = client_v2.create_tweet(text=TWEET_3, in_reply_to_tweet_id=t2_id)
-    t3_id = res3.data["id"]
-    print(f"✅ Reply 2 published! https://x.com/{user.screen_name}/status/{t3_id}")
-
-    print("\n🎉 ENTIRE THREAD PUBLISHED SUCCESSFULLY ON X!")
+    print(f"\n🎉 POST PUBLISHED SUCCESSFULLY ON X!")
+    print(f"👉 URL: https://x.com/{user.screen_name}/status/{t1_id}")
     return f"https://x.com/{user.screen_name}/status/{t1_id}"
 
 
