@@ -254,9 +254,13 @@ Never launch a long run without one.
   - Tier 1: FAIL (True Static Freeze, 0 Hz confirmed)
   - Tier 2: PASS (Conservative Functional: correct frequency and balance, lower amplitude)
   - Tier 3: PASS (Exemplary Target Motion: full vigorous amplitude, locked gaze, planted stance)
-  Tier 2 policies are functional, deployable achievements and must not be rejected as failures.
 - **Confirmation bias firewall:** Keep inspection prompts strictly blinded. Never prime subagents with suspected design bugs or theoretical compromise basins.
 
+## Attempt Progress Animations & Social Publishing Pipeline
+
+- **Per-Attempt Progress Animations (<10s, Honest Trajectories):** For every training run/attempt (v1, v2... vN), render a standardized rollout clip (e.g. 9.0s @ 50 fps, <10s) with auto-resets and terminations disabled (`dones == 0` check). If it falls, somersaults, or collapses, let it fail honestly.
+- **YouTube Shorts Progression Compilation:** When training succeeds (Tier 2/3 vision approval), assemble the attempt clips into a vertical 9:16 ($1080 \times 1920$, 50 fps) YouTube Short beat-synced to upbeat music (e.g. 122 BPM). Include an undistorted 2:3 side-by-side split comparison (center-crop 640x480 frames to 320x480 before resizing to 500x750).
+- **Automated Social Publishing:** Publish to YouTube via `scripts/upload_youtube_short.py` and to X via `scripts/publish_x_post.py` using system-level credentials (`~/.config/youtube/`, `~/.config/x/`). Use a fun, playful, jargon-free tone framing RL as failing hilariously before succeeding. Tag `@pollenrobotics` and `#Robotics #AI`.
 
 ## Sim2real footguns (cost real debugging weeks)
 
