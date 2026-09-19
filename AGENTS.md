@@ -239,6 +239,25 @@ Never launch a long run without one.
 - Report what rollouts actually show ("rolls but face-plants 1 in 3"), not
   "it works!". The user decides when it's good enough.
 
+## Visual Inspection Protocol & Sim Evaluation Safeguards
+
+- **Never mask falls with auto-resets:** Evaluation videos must record unmasked rollouts (`dones == 0` check). If a policy trips or falls, let it fall and stay down.
+- **Dual-modality verification (FFT Pre-Check):** Never rely purely on qualitative multimodal video inspection for dynamic gestures. Always extract and supply ground-truth kinematic telemetry:
+  - Dominant FFT frequency of cyclic joints/root (Hz)
+  - Peak-to-peak angular excursion (degrees)
+  - Video motion energy / pixel difference FFT
+  - Explicit termination count over 12.0s
+  - Anti-hallucination invariant: If FFT verifies active oscillation (e.g. 2.5–3.5 Hz) and >10° angular travel with 0 falls, the evaluation must NOT classify it as "0 Hz frozen".
+- **Stroboscopic Nyquist aliasing awareness:** Multimodal LLMs downsample video to ~1 fps. For cyclic gestures ≥ 2 Hz, 1 fps sampling causes severe wagon-wheel aliasing where active 3 Hz oscillations appear stationary. Always warn the model and provide high-speed cycle burst frames.
+- **Multi-tiered evaluation:** Abolish binary PASS/FAIL collapse:
+  - Tier 0: FAIL (Unstable / Fall / Resets)
+  - Tier 1: FAIL (True Static Freeze, 0 Hz confirmed)
+  - Tier 2: PASS (Conservative Functional: correct frequency and balance, lower amplitude)
+  - Tier 3: PASS (Exemplary Target Motion: full vigorous amplitude, locked gaze, planted stance)
+  Tier 2 policies are functional, deployable achievements and must not be rejected as failures.
+- **Confirmation bias firewall:** Keep inspection prompts strictly blinded. Never prime subagents with suspected design bugs or theoretical compromise basins.
+
+
 ## Sim2real footguns (cost real debugging weeks)
 
 - A fresh `uv sync` is the ground truth (HF Jobs run one): anything that only
