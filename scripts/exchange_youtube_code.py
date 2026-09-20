@@ -57,9 +57,10 @@ def main():
     with open(TOKEN_FILE, "w") as f:
         f.write(creds.to_json())
 
-    print(f"✅ Successfully saved YouTube credentials to {TOKEN_FILE}!")
-    print("\n🚀 Now uploading YouTube Short...")
-    os.system("/home/ubuntu/vibeduck/microduck_rl/.venv/bin/python /home/ubuntu/vibeduck/scripts/upload_youtube_short.py")
+    print(f"✅ Successfully saved permanent YouTube credentials to {TOKEN_FILE}!")
+    if "--upload" in sys.argv:
+        print("\n🚀 Now uploading YouTube Short...")
+        os.system("/home/ubuntu/vibeduck/microduck_rl/.venv/bin/python /home/ubuntu/vibeduck/scripts/upload_youtube_short.py")
 
 if __name__ == "__main__":
     main()
